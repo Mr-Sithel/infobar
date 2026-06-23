@@ -204,7 +204,6 @@ ashita.events.register('command', 'infobar_cmd', function(e)
 
     if sub == 'help' then
         print(chat.header(addon.name):append(chat.message('\31\207/ibar settings\31\22 -\31\204 shows a settings window')))
-        --print(chat.header(addon.name):append(chat.message('\31\207/ibar opacity <0.0-1.0>\31\22 -\31\204 Background Opacity')))
         print(chat.header(addon.name):append(chat.message('\31\207/ibar weekdays\31\22 -\31\204 shows days of the week order')))
         print(chat.header(addon.name):append(chat.message('\31\207/ibar mode\31\22 -\31\204 toggle 1/2 bars')))
         print(chat.header(addon.name):append(chat.message('\31\207/ibar reset\31\22 -\31\204 reset positions')))
@@ -216,17 +215,6 @@ ashita.events.register('command', 'infobar_cmd', function(e)
         show_settings_window = not show_settings_window
         return
     end
-
-    --[[if sub == 'opacity' then
-        local val = tonumber(args[3])
-        if val and val >= 0 and val <= 1 then
-            config.bg_opacity = val
-            settings.save()
-        else
-            print('/infobar opacity 0.0-1.0')
-        end
-        return
-    end--]]
 
     if sub == 'weekdays' then
         show_weekday_horizontal = not show_weekday_horizontal
