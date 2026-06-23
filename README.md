@@ -26,9 +26,15 @@ InfoBar Commands:
 
 Version 0.3
 
+Single Bar mode
+
 ![ibar1](https://github.com/Mr-Sithel/infobar/blob/main/Example_1.png?raw=true)
 
+Split 2 Bar Mode
+
 ![ibar2](https://github.com/Mr-Sithel/infobar/blob/main/Example_2.png?raw=true)
+
+Setting Window
 
 ![ibarsettings](https://github.com/Mr-Sithel/infobar/blob/main/Settings.png?raw=true)
 
