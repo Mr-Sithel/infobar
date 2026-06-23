@@ -1,17 +1,27 @@
+-----------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
+-- Many creators involved that made the orignal code from the modules I put in the modules folder.
+-- I then created and assembled InfoBar Overlay to display in game.
+-- Credit goes out to Thorny, Atom0s, Loonsies, Xenonsmurf, Onimitch, Matix, Hugin, XIUI Team
+-- and anyone else I may have missed.
+-----------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
+
 addon.name    = 'InfoBar'
 addon.author  = 'Sithel'
-addon.version = '0.2'
-addon.desc    = 'Vana overlay: job, zone, region, day, time, weather.'
+addon.version = '0.3'
+addon.desc    = 'Info Bar that shows (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Moon Phase).'
 addon.link    = ''
 
 local settings    = require('settings')
 local imgui       = require('imgui')
 local chat        = require('chat')
-local vanatime    = require('data/vanatime')
-local ZoneState   = require('data/zonestate')
-local Weather     = require('data/weather')
-local Map         = require('data/map')
-local theme       = require('data/infobar_theme')
+local vanatime    = require('modules/vanatime')
+local ZoneState   = require('modules/zonestate')
+local Weather     = require('modules/weather')
+local Direction   = require('modules/direction')
+local Map         = require('modules/map')
+local theme       = require('modules/infobar_theme')
 
 ---------------------------------------------------------
 -- SETTINGS
@@ -25,17 +35,20 @@ local default_settings = T{
     x_double_bottom = 878,
     y_double_bottom = 52,
 
+    use_icons = false,
     two_bars   = false,
     bg_opacity = 0.6,
+    window_rounding = 6.0,
 
     show_weekday_horizontal = false,
     show_weekday_vertical   = false,
 
-    show_playerpos  = true,
     show_jobs       = true,
+    show_playerdir  = true,
+    show_playerpos  = true,
+    show_zone_timer = true,
     show_zone       = true,
     show_region     = true,
-    show_zone_timer = true,
     show_day        = true,
     show_weather    = true,
     show_time       = true,
@@ -191,7 +204,7 @@ ashita.events.register('command', 'infobar_cmd', function(e)
 
     if sub == 'help' then
         print(chat.header(addon.name):append(chat.message('\31\207/ibar settings\31\22 -\31\204 shows a settings window')))
-        print(chat.header(addon.name):append(chat.message('\31\207/ibar opacity <0.0-1.0>\31\22 -\31\204 Background Opacity')))
+        --print(chat.header(addon.name):append(chat.message('\31\207/ibar opacity <0.0-1.0>\31\22 -\31\204 Background Opacity')))
         print(chat.header(addon.name):append(chat.message('\31\207/ibar weekdays\31\22 -\31\204 shows days of the week order')))
         print(chat.header(addon.name):append(chat.message('\31\207/ibar mode\31\22 -\31\204 toggle 1/2 bars')))
         print(chat.header(addon.name):append(chat.message('\31\207/ibar reset\31\22 -\31\204 reset positions')))
@@ -204,7 +217,7 @@ ashita.events.register('command', 'infobar_cmd', function(e)
         return
     end
 
-    if sub == 'opacity' then
+    --[[if sub == 'opacity' then
         local val = tonumber(args[3])
         if val and val >= 0 and val <= 1 then
             config.bg_opacity = val
@@ -213,7 +226,7 @@ ashita.events.register('command', 'infobar_cmd', function(e)
             print('/infobar opacity 0.0-1.0')
         end
         return
-    end
+    end--]]
 
     if sub == 'weekdays' then
         show_weekday_horizontal = not show_weekday_horizontal
@@ -293,7 +306,8 @@ local function draw_settings_window()
         ImGuiWindowFlags_NoTitleBar
     )
 
-    if imgui.Begin("InfoBar - Settings", nil, flags) then
+    --if imgui.Begin("InfoBar - Settings", nil, flags) then     -- Ashita 4.30
+    if imgui.Begin('InfoBar - Settings', { true }, flags) then  -- Ashita 4.16 or 4.30
         imgui.Text("InfoBar Settings")
         imgui.Separator()
         imgui.Text("Display Options")
@@ -316,9 +330,10 @@ local function draw_settings_window()
         imgui.EndGroup()
 
         -- Column 2
-        imgui.SameLine(200)  -- adjust spacing if needed
+        imgui.SameLine(200)
 
         imgui.BeginGroup()
+        toggle("Show Direction",  "show_playerdir")
         toggle("Show Day",        "show_day")
         toggle("Show Vana Time",  "show_time")
         toggle("Show Weather",    "show_weather")
@@ -351,14 +366,33 @@ local function draw_settings_window()
         end
 
         -------------------------------------------------
+        -- USE ICONS
+        -------------------------------------------------
+        local ref = { config.use_icons }
+        if imgui.Checkbox("Enable Icons", ref) then
+            config.use_icons = ref[1]
+            settings.save()
+        end
+
+        -------------------------------------------------
         -- OPACITY SLIDER
         -------------------------------------------------
+        imgui.Separator()
+        imgui.Text("Background Options")
         local opacity_ref = { config.bg_opacity }
         if imgui.SliderFloat("Opacity", opacity_ref, 0.0, 1.0, "%.2f") then
             config.bg_opacity = opacity_ref[1]
             settings.save()
         end
 
+        -------------------------------------------------
+        -- Background Rounding Slider (1–15)
+        -------------------------------------------------
+        local rounding_ref = { config.window_rounding }
+        if imgui.SliderFloat("Round Corners", rounding_ref, 1.0, 15.0, "%.0f") then
+            config.window_rounding = rounding_ref[1]
+            settings.save()
+        end
         imgui.Separator()
 
         -------------------------------------------------
@@ -377,7 +411,6 @@ local function draw_settings_window()
             config.show_weekday_horizontal = horiz_ref[1]
             settings.save()
         end
-
         imgui.Separator()
 
         -------------------------------------------------
@@ -428,6 +461,8 @@ local function draw_top_window()
     end
     imgui.SetNextWindowBgAlpha(config.bg_opacity)
     imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
+    imgui.PushStyleColor(ImGuiCol_WindowBg, {0.0, 0.0, 0.0, config.bg_opacity})
 
     local flags = bit.bor(
         ImGuiWindowFlags_NoTitleBar,
@@ -436,7 +471,8 @@ local function draw_top_window()
         ImGuiWindowFlags_AlwaysAutoResize
     )
 
-    if imgui.Begin('InfoBar - Top', nil, flags) then
+    --if imgui.Begin('InfoBar - Top', nil, flags) then    -- Ashita 4.30
+    if imgui.Begin('InfoBar - Top', { true }, flags) then -- Ashita 4.16 or 4.30
         local pos = { imgui.GetWindowPos() }
         anchor_x = pos[1]
         anchor_y = pos[2]
@@ -445,6 +481,7 @@ local function draw_top_window()
         local zone, region = get_zone_region()
         local gx, gy = Map.get_player_grid_position()
         local playerpos = (gx and gy) and string.format("%s-%d", gx, gy) or "--/--"
+        local facing = Direction.get()
 
         ---------------------------------------------------------
         -- TWO-BAR MODE (FULLY TOGGLE-AWARE)
@@ -457,6 +494,7 @@ local function draw_top_window()
             local parts = {}
 
             if config.show_jobs       then table.insert(parts, { type="text",    value=get_job_text() }) end
+            if config.show_playerdir  then table.insert(parts, { type="text",    value=facing }) end
             if config.show_playerpos  then table.insert(parts, { type="text",    value=playerpos }) end
             if config.show_zone_timer then table.insert(parts, { type="text",    value=get_zone_timer() }) end
             if config.show_zone       then table.insert(parts, { type="text",    value=zone }) end
@@ -475,15 +513,20 @@ local function draw_top_window()
                 elseif item.type == "weather" then
                     imgui.TextColored(item.color, item.value)
                 elseif item.type == "text" then
+                    -- Zone timer (green)
                     if item.value == get_zone_timer() then
-                        -- GREEN ZONE TIMER
-                        imgui.TextColored({0.0, 1.0, 0.0, 1.0}, "Zone Timer " .. item.value)
-                        --imgui.TextColored({0.0, 1.0, 0.0, 1.0}, item.value)
+                        if config.use_icons then
+                            imgui.TextColored({0.0, 1.0, 0.0, 1.0}, "\xef\x8b\xb2 " .. item.value)
+                        else
+                            imgui.TextColored({0.0, 1.0, 0.0, 1.0}, "Zone Timer " .. item.value)
+                        end
+                    -- Player direction (color from module)
+                    elseif item.value == facing then
+                        imgui.TextColored(Direction.color_for(facing), item.value)
                     else
                         imgui.Text(item.value)
                     end
                 end
-            
                 imgui.SameLine()
             end
 
@@ -494,13 +537,13 @@ local function draw_top_window()
             local day, time = get_vana_day_and_time()
             local weather_name  = Weather.get()
             local weather_color = Weather.get_color()
+            local facing = Direction.get()
 
-            -- LEFT SIDE (zone | region | timer)
+            -- LEFT SIDE (job | compass | pos | timer | zone | region)
             local left = {}
-            --------------
 
-            --------------
             if config.show_jobs       then table.insert(left, get_job_text()) end
+            if config.show_playerdir  then table.insert(left, facing) end
             if config.show_playerpos  then table.insert(left, playerpos) end
             if config.show_zone_timer then table.insert(left, get_zone_timer()) end
             if config.show_zone       then table.insert(left, zone) end
@@ -509,14 +552,18 @@ local function draw_top_window()
             if #left > 0 then
                 for i, item in ipairs(left) do
                     if item == get_zone_timer() then
-                        --imgui.TextColored({0.0, 1.0, 0.0, 1.0}, item)
-                        imgui.TextColored({0.0, 1.0, 0.0, 1.0}, "Zone Timer " .. item)
+                        if config.use_icons then
+                            imgui.TextColored({0.0, 1.0, 0.0, 1.0}, "\xef\x8b\xb2 " .. item)
+                        else
+                            imgui.TextColored({0.0, 1.0, 0.0, 1.0}, "Zone Timer " .. item)
+                        end
+                    elseif item == facing then
+                        imgui.TextColored(Direction.color_for(facing), item)
                     else
                         imgui.Text(item)
                     end
                     
                     imgui.SameLine()
-
                     imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                     imgui.SameLine()
                 end
@@ -532,8 +579,11 @@ local function draw_top_window()
             if config.show_time then
                 imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                 imgui.SameLine()
-                imgui.TextColored({1.0, 0.80, 0.20, 1.0}, "\xef\x80\x97 " .. time)
-                --imgui.TextColored({1.0, 0.80, 0.20, 1.0}, time) -- Vana Time Yellow
+                if config.use_icons then
+                    imgui.TextColored({1.0, 0.80, 0.20, 1.0}, "\xef\x80\x97 " .. time)
+                else
+                    imgui.TextColored({1.0, 0.80, 0.20, 1.0}, time)
+                end
                 imgui.SameLine()
             end
 
@@ -555,7 +605,8 @@ local function draw_top_window()
     end
 
     imgui.End()
-    imgui.PopStyleVar()
+    imgui.PopStyleColor()   -- 1 color
+    imgui.PopStyleVar(2)    -- 2 vars
 end
 
 local function draw_bottom_window()
@@ -566,6 +617,8 @@ local function draw_bottom_window()
     end
     imgui.SetNextWindowBgAlpha(config.bg_opacity)
     imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
+    imgui.PushStyleColor(ImGuiCol_WindowBg, {0.0, 0.0, 0.0, config.bg_opacity})
 
     local flags = bit.bor(
         ImGuiWindowFlags_NoTitleBar,
@@ -574,7 +627,8 @@ local function draw_bottom_window()
         ImGuiWindowFlags_AlwaysAutoResize
     )
 
-    if imgui.Begin('InfoBar - Bottom', nil, flags) then
+    --if imgui.Begin('InfoBar - Bottom', nil, flags) then    -- Ashita 4.30
+    if imgui.Begin('InfoBar - Bottom', { true }, flags) then -- Ashita 4.16 or 4.30
         local pos = { imgui.GetWindowPos() }
         anchor_bottom_x = pos[1]
         anchor_bottom_y = pos[2]
@@ -612,18 +666,22 @@ local function draw_bottom_window()
             elseif item.type == "text" then
                 if item.value == time then
                     -- Clock icon + yellow Vana time
-                    imgui.TextColored({1.0, 0.80, 0.20, 1.0}, "\xef\x80\x97 " .. item.value)
+                    if config.use_icons then
+                        imgui.TextColored({1.0, 0.80, 0.20, 1.0}, "\xef\x80\x97 " .. time)
+                    else
+                        imgui.TextColored({1.0, 0.80, 0.20, 1.0}, time)
+                    end
                 else
                     imgui.Text(item.value)
                 end
             end
-        
             imgui.SameLine()
         end
     end
 
     imgui.End()
-    imgui.PopStyleVar()
+    imgui.PopStyleColor()   -- 1 color
+    imgui.PopStyleVar(2)    -- 2 vars
 end
 
 local function draw_weekday_vertical()
@@ -631,6 +689,8 @@ local function draw_weekday_vertical()
 
     imgui.SetNextWindowBgAlpha(config.bg_opacity)
     imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
+    imgui.PushStyleColor(ImGuiCol_WindowBg, {0.0, 0.0, 0.0, config.bg_opacity})
 
     local flags = bit.bor(
         ImGuiWindowFlags_NoResize,
@@ -639,7 +699,8 @@ local function draw_weekday_vertical()
         ImGuiWindowFlags_NoTitleBar
     )
 
-    if imgui.Begin("InfoBar - Weekdays (Vertical)", nil, flags) then
+    --if imgui.Begin("InfoBar - Weekdays (Vertical)", nil, flags) then    -- Ashita 4.30
+    if imgui.Begin('InfoBar - Weekdays (Vertical)', { true }, flags) then -- Ashita 4.16 or 4.30
         draw_colored_day("Fireday")
         draw_colored_day("Earthday")
         draw_colored_day("Waterday")
@@ -651,7 +712,8 @@ local function draw_weekday_vertical()
     end
 
     imgui.End()
-    imgui.PopStyleVar()
+    imgui.PopStyleColor()   -- 1 color
+    imgui.PopStyleVar(2)    -- 2 vars
 end
 
 local function draw_weekday_horizontal()
@@ -659,6 +721,8 @@ local function draw_weekday_horizontal()
 
     imgui.SetNextWindowBgAlpha(config.bg_opacity)
     imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
+    imgui.PushStyleColor(ImGuiCol_WindowBg, {0.0, 0.0, 0.0, config.bg_opacity})
 
     local flags = bit.bor(
         ImGuiWindowFlags_NoResize,
@@ -667,7 +731,8 @@ local function draw_weekday_horizontal()
         ImGuiWindowFlags_NoTitleBar
     )
 
-    if imgui.Begin("InfoBar - Weekdays (Horizontal)", nil, flags) then
+    --if imgui.Begin("InfoBar - Weekdays (Horizontal)", nil, flags) then    -- Ashita 4.30
+    if imgui.Begin('InfoBar - Weekdays (Horizontal)', { true }, flags) then -- Ashita 4.16 or 4.30
         draw_colored_day("Fireday");      imgui.SameLine()
         draw_colored_day("Earthday");     imgui.SameLine()
         draw_colored_day("Waterday");     imgui.SameLine()
@@ -679,7 +744,8 @@ local function draw_weekday_horizontal()
     end
 
     imgui.End()
-    imgui.PopStyleVar()
+    imgui.PopStyleColor()   -- 1 color
+    imgui.PopStyleVar(2)    -- 2 vars
 end
 
 local function draw_weather_test_window()
@@ -687,6 +753,8 @@ local function draw_weather_test_window()
 
     imgui.SetNextWindowBgAlpha(config.bg_opacity)
     imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
+    imgui.PushStyleColor(ImGuiCol_WindowBg, {0.0, 0.0, 0.0, config.bg_opacity})
 
     local flags = bit.bor(
         ImGuiWindowFlags_NoResize,
@@ -695,7 +763,8 @@ local function draw_weather_test_window()
         ImGuiWindowFlags_NoTitleBar
     )
 
-    if imgui.Begin("InfoBar - Weather Colors", nil, flags) then
+    --if imgui.Begin("InfoBar - Weather Colors", nil, flags) then    -- Ashita 4.30
+    if imgui.Begin('InfoBar - Weather Colors', { true }, flags) then -- Ashita 4.16 or 4.30
         for id, name in pairs(Weather.table) do
             local col = Weather.colors[name] or { 1, 1, 1, 1 }
             imgui.TextColored(col, name)
@@ -703,7 +772,8 @@ local function draw_weather_test_window()
     end
 
     imgui.End()
-    imgui.PopStyleVar()
+    imgui.PopStyleColor()   -- 1 color
+    imgui.PopStyleVar(2)    -- 2 vars
 end
 
 ---------------------------------------------------------
