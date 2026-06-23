@@ -333,7 +333,7 @@ local function draw_settings_window()
         imgui.SameLine(200)
 
         imgui.BeginGroup()
-        toggle("Show Direction",  "show_playerdir")
+        toggle("Show Compass",    "show_playerdir") -- Direction changed to Compass
         toggle("Show Day",        "show_day")
         toggle("Show Vana Time",  "show_time")
         toggle("Show Weather",    "show_weather")
