@@ -23,6 +23,10 @@
 * No warranties are given.
 ]]--
 
+-- Original addon came from clockvana @
+-- https://github.com/ConteAlmaviva/clockvana/
+-- Credit goes out to ConteAlmaviva
+
 local vanatime = { }
 
 ashita                  = ashita or { };

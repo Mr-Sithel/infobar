@@ -1,3 +1,7 @@
+-- Credit to loonsies for creating the boussole addon.
+-- Parts of Boussole was used to grab player position on grid. Example (I-5)
+-- https://github.com/loonsies/boussole
+
 local map = {}
 
 local mem = ashita.memory

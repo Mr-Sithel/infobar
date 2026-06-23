@@ -6,8 +6,8 @@ local ZoneState = {
     lastPlayerId  = 0,   -- NEW: track active character
 }
 
-local regions      = require('data/regions')
-local regionZones  = require('data/regionZones')
+local regions      = require('modules/regions')
+local regionZones  = require('modules/regionZones')
 
 ---------------------------------------------------------
 -- Helpers

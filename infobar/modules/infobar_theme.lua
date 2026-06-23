@@ -1,4 +1,4 @@
--- Colored theme used from XIUI
+-- Credit to the XIUI team for color scheme
 -- https://github.com/tirem/XIUI
 local imgui = require('imgui')
 

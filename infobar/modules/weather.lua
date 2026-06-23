@@ -1,5 +1,7 @@
 -- weather.lua
--- HorizonXI-safe weather module for InfoBar (using Weatherman signature)
+-- HorizonXI-safe weather module for InfoBar (using meteorologist signature)
+-- https://github.com/clanofartisans/meteorologist/blob/master/meteorologist.lua
+-- Credit to Matix and Hugin for making the weather addon.
 
 local weather = {}
 
