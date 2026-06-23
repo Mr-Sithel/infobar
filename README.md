@@ -26,11 +26,11 @@ InfoBar Commands:
 
 Version 0.3
 
-![ibar1]()
+![ibar1](https://github.com/Mr-Sithel/infobar/blob/main/Example_1.png?raw=true)
 
-![ibar2]()
+![ibar2](https://github.com/Mr-Sithel/infobar/blob/main/Example_2.png?raw=true)
 
-![ibarsettings]()
+![ibarsettings](https://github.com/Mr-Sithel/infobar/blob/main/Settings.png?raw=true)
 
 ### Installation
 
