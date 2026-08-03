@@ -14,9 +14,9 @@ InfoBar Commands:
 * /ibar reset (resets overlay to default location)
 * /ibar save (saves settings)
 
-### Changed
+### To-Do
 
-- Nothing
+- EXP/Merit/Per Hour Rate/XP Chain Bar
 
 ### Added
 
@@ -37,6 +37,9 @@ Split 2 Bar Mode
 Setting Window
 
 ![ibarsettings](https://github.com/Mr-Sithel/infobar/blob/main/Settings.png?raw=true)
+
+### ${\textsf{\color{red}{Known Issues}}}$
+- Single Bar and 2 Bar modes not saving location properly
 
 ### Installation
 
