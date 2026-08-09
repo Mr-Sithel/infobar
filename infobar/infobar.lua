@@ -1,15 +1,13 @@
 -----------------------------------------------------------------------------------------------------
------------------------------------------------------------------------------------------------------
 -- Many creators involved that made the orignal code from the modules I put in the modules folder.
 -- I then created and assembled InfoBar Overlay to display in game.
 -- Credit goes out to Thorny, Atom0s, Loonsies, Xenonsmurf, Onimitch, Matix, Hugin, XIUI Team
 -- and anyone else I may have missed.
 -----------------------------------------------------------------------------------------------------
------------------------------------------------------------------------------------------------------
 
 addon.name    = 'InfoBar'
 addon.author  = 'Sithel'
-addon.version = '0.3'
+addon.version = '0.4'
 addon.desc    = 'Info Bar that shows (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Moon Phase).'
 addon.link    = ''
 
@@ -21,6 +19,7 @@ local ZoneState   = require('modules/zonestate')
 local Weather     = require('modules/weather')
 local Direction   = require('modules/direction')
 local Map         = require('modules/map')
+local Exp         = require('modules/exp');
 local theme       = require('modules/infobar_theme')
 
 ---------------------------------------------------------
@@ -42,6 +41,7 @@ local default_settings = T{
 
     show_weekday_horizontal = false,
     show_weekday_vertical   = false,
+    show_exp_horizontal     = false,
 
     show_jobs       = true,
     show_playerdir  = true,
@@ -57,7 +57,9 @@ local default_settings = T{
 
 local config = settings.load(default_settings)
 
--- Load settings between characters
+---------------------------------------------------------
+-- SETTINGS
+---------------------------------------------------------
 local function update_settings(s)
     if s ~= nil then
         config = s
@@ -71,27 +73,11 @@ settings.register('settings', 'settings_update', update_settings)
 -- STATE
 ---------------------------------------------------------
 local show_weather_test       = false
-local show_weekday_horizontal = config.show_weekday_horizontal
-local show_weekday_vertical   = config.show_weekday_vertical
 local show_settings_window    = false
 
 local currentZoneName   = ''
 local currentRegionName = ''
 local zone_enter_time   = os.clock()
-
-local two_bars = config.two_bars
-
-local anchor_x, anchor_y
-local anchor_bottom_x = config.x_double_bottom
-local anchor_bottom_y = config.y_double_bottom
-
-if two_bars then
-    anchor_x = config.x_double_top
-    anchor_y = config.y_double_top
-else
-    anchor_x = config.x_single
-    anchor_y = config.y_single
-end
 
 local top_initialized    = false
 local bottom_initialized = false
@@ -203,64 +189,46 @@ ashita.events.register('command', 'infobar_cmd', function(e)
     local sub = (args[2] or 'help'):lower()
 
     if sub == 'help' then
-        print(chat.header(addon.name):append(chat.message('\31\207/ibar settings\31\22 -\31\204 shows a settings window')))
-        print(chat.header(addon.name):append(chat.message('\31\207/ibar weekdays\31\22 -\31\204 shows days of the week order')))
-        print(chat.header(addon.name):append(chat.message('\31\207/ibar mode\31\22 -\31\204 toggle 1/2 bars')))
-        print(chat.header(addon.name):append(chat.message('\31\207/ibar reset\31\22 -\31\204 reset positions')))
-        print(chat.header(addon.name):append(chat.message('\31\207/ibar save\31\22 -\31\204 save settings')))
-        return
+        print(chat.header(addon.name):append(chat.message('\31\207Commands:')));
+        print('\31\207 /ibar                    \31\8 - This help menu.');
+        print('\31\207 /ibar  c|config|settings \31\8 - shows a settings window.');
+        print('\31\207 /ibar  w|weekdays        \31\8 - shows days of the week order.');
+        print('\31\207 /ibar  e|exp             \31\8 - shows an exp bar.');
+        print('\31\207 /ibar  r|reset           \31\8 - reset positions.');
+        print('\31\207 /ibar  save              \31\8 - save settings.');
     end
-
-    if sub == 'settings' then
+    if T{'settings', 'config', 'c'}:contains(sub) then
         show_settings_window = not show_settings_window
         return
     end
 
-    if sub == 'weekdays' then
-        show_weekday_horizontal = not show_weekday_horizontal
-        config.show_weekday_horizontal = show_weekday_horizontal
+    if T{'weekdays', 'w'}:contains(sub) then
+        config.show_weekday_horizontal = not config.show_weekday_horizontal
         settings.save()
         return
     end
 
-    if sub == 'mode' then
-        two_bars = not two_bars
-        config.two_bars = two_bars
+    if T{'exp', 'e'}:contains(sub) then
+        config.show_exp_horizontal = not config.show_exp_horizontal
+        settings.save()
+        return
+    end
 
-        if two_bars then
-            anchor_x        = config.x_double_top
-            anchor_y        = config.y_double_top
-            anchor_bottom_x = config.x_double_bottom
-            anchor_bottom_y = config.y_double_bottom + 20
-        else
-            anchor_x = config.x_single
-            anchor_y = config.y_single
-        end
-
+    if T{'mode', 'm'}:contains(sub) then
+        config.two_bars = not config.two_bars
         top_initialized    = false
         bottom_initialized = false
         settings.save()
         return
     end
 
-    if sub == 'reset' then
-        if two_bars then
-            anchor_x        = default_settings.x_double_top
-            anchor_y        = default_settings.y_double_top
-            anchor_bottom_x = default_settings.x_double_bottom
-            anchor_bottom_y = default_settings.y_double_bottom
-
-            config.x_double_top    = default_settings.x_double_top
-            config.y_double_top    = default_settings.y_double_top
-            config.x_double_bottom = default_settings.x_double_bottom
-            config.y_double_bottom = default_settings.y_double_bottom
-        else
-            anchor_x = default_settings.x_single
-            anchor_y = default_settings.y_single
-
-            config.x_single = default_settings.x_single
-            config.y_single = default_settings.y_single
-        end
+    if T{'reset', 'r'}:contains(sub) then
+        config.x_double_top    = default_settings.x_double_top
+        config.y_double_top    = default_settings.y_double_top
+        config.x_double_bottom = default_settings.x_double_bottom
+        config.y_double_bottom = default_settings.y_double_bottom
+        config.x_single        = default_settings.x_single
+        config.y_single        = default_settings.y_single
 
         top_initialized    = false
         bottom_initialized = false
@@ -275,6 +243,7 @@ ashita.events.register('command', 'infobar_cmd', function(e)
 
     if sub == 'save' then
         settings.save()
+        print(chat.header(addon.name):append(chat.message('\31\204Settings Saved!')));
         return
     end
 end)
@@ -321,7 +290,7 @@ local function draw_settings_window()
         imgui.SameLine(200)
 
         imgui.BeginGroup()
-        toggle("Show Compass",    "show_playerdir") -- Direction changed to Compass
+        toggle("Show Compass",    "show_playerdir")
         toggle("Show Day",        "show_day")
         toggle("Show Vana Time",  "show_time")
         toggle("Show Weather",    "show_weather")
@@ -333,21 +302,9 @@ local function draw_settings_window()
         -------------------------------------------------
         -- TWO BAR MODE
         -------------------------------------------------
-        local val = { two_bars }
+        local val = { config.two_bars }
         if imgui.Checkbox("Two Bars Mode", val) then
-            two_bars = val[1]
-            config.two_bars = two_bars
-
-            if two_bars then
-                anchor_x        = config.x_double_top
-                anchor_y        = config.y_double_top
-                anchor_bottom_x = config.x_double_bottom
-                anchor_bottom_y = config.y_double_bottom + 20
-            else
-                anchor_x = config.x_single
-                anchor_y = config.y_single
-            end
-
+            config.two_bars = val[1]
             top_initialized    = false
             bottom_initialized = false
             settings.save()
@@ -384,19 +341,23 @@ local function draw_settings_window()
         imgui.Separator()
 
         -------------------------------------------------
-        -- WEEKDAYS WINDOWS TOGGLES
+        -- WINDOW TOGGLES
         -------------------------------------------------
-        local vert_ref = { show_weekday_vertical }
-        if imgui.Checkbox("Show Weekdays Vertical", vert_ref) then
-            show_weekday_vertical = vert_ref[1]
+        local vert_ref = { config.show_weekday_vertical }
+        if imgui.Checkbox("Weekdays Vertical Bar", vert_ref) then
             config.show_weekday_vertical = vert_ref[1]
             settings.save()
         end
 
-        local horiz_ref = { show_weekday_horizontal }
-        if imgui.Checkbox("Show Weekdays Horizontal", horiz_ref) then
-            show_weekday_horizontal = horiz_ref[1]
+        local horiz_ref = { config.show_weekday_horizontal }
+        if imgui.Checkbox("Weekdays Horizontal Bar", horiz_ref) then
             config.show_weekday_horizontal = horiz_ref[1]
+            settings.save()
+        end
+
+        local exp_ref = { config.show_exp_horizontal }
+        if imgui.Checkbox("EXP/LP Bar", exp_ref) then
+            config.show_exp_horizontal = exp_ref[1]
             settings.save()
         end
         imgui.Separator()
@@ -405,23 +366,12 @@ local function draw_settings_window()
         -- RESET + SAVE BUTTONS
         -------------------------------------------------
         if imgui.Button("Reset Positions") then
-            if two_bars then
-                anchor_x        = default_settings.x_double_top
-                anchor_y        = default_settings.y_double_top
-                anchor_bottom_x = default_settings.x_double_bottom
-                anchor_bottom_y = default_settings.y_double_bottom
-
-                config.x_double_top    = default_settings.x_double_top
-                config.y_double_top    = default_settings.y_double_top
-                config.x_double_bottom = default_settings.x_double_bottom
-                config.y_double_bottom = default_settings.y_double_bottom
-            else
-                anchor_x = default_settings.x_single
-                anchor_y = default_settings.y_single
-
-                config.x_single = default_settings.x_single
-                config.y_single = default_settings.y_single
-            end
+            config.x_double_top    = default_settings.x_double_top
+            config.y_double_top    = default_settings.y_double_top
+            config.x_double_bottom = default_settings.x_double_bottom
+            config.y_double_bottom = default_settings.y_double_bottom
+            config.x_single        = default_settings.x_single
+            config.y_single        = default_settings.y_single
 
             top_initialized    = false
             bottom_initialized = false
@@ -445,8 +395,11 @@ end
 
 local function draw_top_window()
     if not top_initialized then
-        imgui.SetNextWindowPos({ anchor_x, anchor_y }, ImGuiCond_Always)
+        local target_x = config.two_bars and config.x_double_top or config.x_single
+        local target_y = config.two_bars and config.y_double_top or config.y_single
+        imgui.SetNextWindowPos({ target_x, target_y }, ImGuiCond_Always)
     end
+
     imgui.SetNextWindowBgAlpha(config.bg_opacity)
     imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
     imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
@@ -462,8 +415,21 @@ local function draw_top_window()
     --if imgui.Begin('InfoBar - Top', nil, flags) then    -- Ashita 4.30
     if imgui.Begin('InfoBar - Top', { true }, flags) then -- Ashita 4.16 or 4.30
         local pos = { imgui.GetWindowPos() }
-        anchor_x = pos[1]
-        anchor_y = pos[2]
+        local cur_x, cur_y = pos[1], pos[2]
+
+        if config.two_bars then
+            if config.x_double_top ~= cur_x or config.y_double_top ~= cur_y then
+                config.x_double_top = cur_x
+                config.y_double_top = cur_y
+                settings.save()
+            end
+        else
+            if config.x_single ~= cur_x or config.y_single ~= cur_y then
+                config.x_single = cur_x
+                config.y_single = cur_y
+                settings.save()
+            end
+        end
         top_initialized = true
 
         local zone, region = get_zone_region()
@@ -472,9 +438,9 @@ local function draw_top_window()
         local facing = Direction.get()
 
         ---------------------------------------------------------
-        -- TWO-BAR MODE (FULLY TOGGLE-AWARE)
+        -- TWO-BAR MODE 
         ---------------------------------------------------------
-        if two_bars then
+        if config.two_bars then
             local day, time = get_vana_day_and_time()
             local weather_name  = Weather.get()
             local weather_color = Weather.get_color()
@@ -508,7 +474,7 @@ local function draw_top_window()
                         else
                             imgui.TextColored({0.0, 1.0, 0.0, 1.0}, "Zone Timer " .. item.value)
                         end
-                    -- Player direction (color from module)
+                    -- Player direction 
                     elseif item.value == facing then
                         imgui.TextColored(Direction.color_for(facing), item.value)
                     else
@@ -519,7 +485,7 @@ local function draw_top_window()
             end
 
         ---------------------------------------------------------
-        -- SINGLE-BAR MODE (UNCHANGED, JUST GREY SEPARATORS)
+        -- SINGLE-BAR MODE 
         ---------------------------------------------------------
         else
             local day, time = get_vana_day_and_time()
@@ -593,16 +559,17 @@ local function draw_top_window()
     end
 
     imgui.End()
-    imgui.PopStyleColor()   -- 1 color
-    imgui.PopStyleVar(2)    -- 2 vars
+    imgui.PopStyleColor()
+    imgui.PopStyleVar(2)
 end
 
 local function draw_bottom_window()
-    if not two_bars then return end
+    if not config.two_bars then return end
 
     if not bottom_initialized then
-        imgui.SetNextWindowPos({ anchor_bottom_x, anchor_bottom_y }, ImGuiCond_Always)
+        imgui.SetNextWindowPos({ config.x_double_bottom, config.y_double_bottom }, ImGuiCond_Always)
     end
+
     imgui.SetNextWindowBgAlpha(config.bg_opacity)
     imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
     imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
@@ -618,8 +585,13 @@ local function draw_bottom_window()
     --if imgui.Begin('InfoBar - Bottom', nil, flags) then    -- Ashita 4.30
     if imgui.Begin('InfoBar - Bottom', { true }, flags) then -- Ashita 4.16 or 4.30
         local pos = { imgui.GetWindowPos() }
-        anchor_bottom_x = pos[1]
-        anchor_bottom_y = pos[2]
+        local cur_x, cur_y = pos[1], pos[2]
+
+        if config.x_double_bottom ~= cur_x or config.y_double_bottom ~= cur_y then
+            config.x_double_bottom = cur_x
+            config.y_double_bottom = cur_y
+            settings.save()
+        end
         bottom_initialized = true
 
         local day, time = get_vana_day_and_time()
@@ -627,7 +599,7 @@ local function draw_bottom_window()
         local weather_color = Weather.get_color()
 
         -------------------------------------------------
-        -- BUILD LIST OF ITEMS TO DISPLAY
+        -- LIST OF ITEMS TO DISPLAY
         -------------------------------------------------
         local parts = {}
 
@@ -668,12 +640,12 @@ local function draw_bottom_window()
     end
 
     imgui.End()
-    imgui.PopStyleColor()   -- 1 color
-    imgui.PopStyleVar(2)    -- 2 vars
+    imgui.PopStyleColor()
+    imgui.PopStyleVar(2)
 end
 
 local function draw_weekday_vertical()
-    if not show_weekday_vertical then return end
+    if not config.show_weekday_vertical then return end
 
     imgui.SetNextWindowBgAlpha(config.bg_opacity)
     imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
@@ -700,12 +672,12 @@ local function draw_weekday_vertical()
     end
 
     imgui.End()
-    imgui.PopStyleColor()   -- 1 color
-    imgui.PopStyleVar(2)    -- 2 vars
+    imgui.PopStyleColor()
+    imgui.PopStyleVar(2)
 end
 
 local function draw_weekday_horizontal()
-    if not show_weekday_horizontal then return end
+    if not config.show_weekday_horizontal then return end
 
     imgui.SetNextWindowBgAlpha(config.bg_opacity)
     imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
@@ -732,8 +704,106 @@ local function draw_weekday_horizontal()
     end
 
     imgui.End()
-    imgui.PopStyleColor()   -- 1 color
-    imgui.PopStyleVar(2)    -- 2 vars
+    imgui.PopStyleColor()
+    imgui.PopStyleVar(2)
+end
+
+local function draw_exp_horizontal()
+    if not config.show_exp_horizontal then return end
+
+    local data = Exp.exp_data
+    local lp_mode = Exp.is_lp_mode and Exp.is_lp_mode() or false
+
+    imgui.SetNextWindowBgAlpha(config.bg_opacity)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
+    imgui.PushStyleColor(ImGuiCol_WindowBg, {0,0,0,config.bg_opacity})
+
+    local flags = bit.bor(
+        ImGuiWindowFlags_NoResize,
+        ImGuiWindowFlags_NoCollapse,
+        ImGuiWindowFlags_AlwaysAutoResize,
+        ImGuiWindowFlags_NoTitleBar
+    )
+
+    --if imgui.Begin("InfoBar - EXP (Horizontal)", nil, flags) then    -- Ashita 4.30
+    if imgui.Begin('InfoBar - EXP (Horizontal)', { true }, flags) then -- Ashita 4.16 or 4.30
+        local curr = data.current_exp
+        local max  = data.max_exp
+        local tnl  = data.tnl
+        local rate = data.exp_per_hr or 0
+        local chain = data.chain_count or 0
+
+        local tnl_label = "TNL:"
+        if lp_mode then
+            imgui.Text("LP:"); imgui.SameLine()
+            curr = data.lp_current or 0
+            max  = data.lp_max or 10000
+            tnl  = max - curr
+            tnl_label = "TNM:"
+
+        local merit_str = string.format("%s/%s", Exp.format_comma(curr), Exp.format_comma(max))
+            imgui.TextColored({0.23, 0.61, 0.91, 1.0}, merit_str); imgui.SameLine() -- blue
+        else
+            imgui.Text("EXP:"); imgui.SameLine()
+            local exp_str = string.format("%s/%s", Exp.format_comma(curr), Exp.format_comma(max))
+            imgui.TextColored({0.55, 0.90, 0.75, 1.0}, exp_str); imgui.SameLine() -- light green
+        end
+
+        imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|"); imgui.SameLine()
+
+        imgui.Text(tnl_label); imgui.SameLine()
+        if lp_mode then
+            imgui.TextColored({0.23, 0.61, 0.91, 1.0}, Exp.format_comma(tnl)); imgui.SameLine() -- blue
+            imgui.TextColored({0.2, 0.8, 0.2, 1.0}, string.format("(%d)", data.merit_count or 0)); imgui.SameLine() -- green
+        else
+            imgui.TextColored({0.55, 0.90, 0.75, 1.0}, Exp.format_comma(tnl)); imgui.SameLine() -- light green
+        end
+
+        imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|"); imgui.SameLine()
+
+        imgui.Text("Rate:"); imgui.SameLine()
+        if lp_mode then
+            local mp_rate = (data.exp_per_hr or 0) / 10000
+            local rate_str = string.format("%.1f", mp_rate)
+            imgui.TextColored({1.0, 0.80, 0.20, 1.0}, rate_str); imgui.SameLine() -- orange/yellow
+            imgui.TextColored({1, 1, 1, 1}, " mp/hr"); imgui.SameLine()
+        else
+            local rate_str = Exp.format_comma(data.exp_per_hr or 0)
+            imgui.TextColored({1.0, 0.80, 0.20, 1.0}, rate_str); imgui.SameLine() -- orange/yellow
+            imgui.TextColored({1, 1, 1, 1}, " xp/hr"); imgui.SameLine()
+        end
+
+        imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|"); imgui.SameLine()
+
+        --imgui.TextColored({1.0, 0.6, 0.0, 1.0}, " \xef\x83\x81\xef\x81\xa1"); imgui.SameLine()
+        imgui.Text("Chain:"); imgui.SameLine()
+
+        local chain_rem = Exp.get_chain_time_remaining and Exp.get_chain_time_remaining() or 0
+        if chain_rem > 0 then
+            local mins = math.floor(chain_rem / 60)
+            local secs = chain_rem % 60
+            
+            -- Displays "#0 (4m 59s)"
+            local chain_str = string.format("# %d (%dm %02ds)", chain, mins, secs)
+            local timer_color = {1.0, 1.0, 0.67, 1.0}
+
+            if chain_rem <= 10 then
+                timer_color = {1.0, 0.2, 0.2, 1.0}  -- Red
+            elseif chain_rem <= 30 then
+                timer_color = {1.0, 0.6, 0.0, 1.0}  -- Orange
+            end
+
+            imgui.TextColored(timer_color, chain_str)
+        else
+            imgui.TextColored({1.0, 0.80, 0.20, 1.0}, "0")
+            --imgui.Text("0")
+        end
+    end
+
+    imgui.End()
+    imgui.PopStyleColor()
+    imgui.PopStyleVar(2)
 end
 
 local function draw_weather_test_window()
@@ -760,14 +830,25 @@ local function draw_weather_test_window()
     end
 
     imgui.End()
-    imgui.PopStyleColor()   -- 1 color
-    imgui.PopStyleVar(2)    -- 2 vars
+    imgui.PopStyleColor()
+    imgui.PopStyleVar(2)
 end
 
 ---------------------------------------------------------
 -- PRESENT
 ---------------------------------------------------------
 ashita.events.register('d3d_present', 'infobar_present', function()
+    local player = AshitaCore:GetMemoryManager():GetPlayer()
+    local entity = GetPlayerEntity()
+
+    -- hide UI if player/entity objects aren't initialized yet
+    if not player or not entity then return end
+
+    -- hide UI during zoning, uninitialized job state (0), or cutscenes/events (StatusServer == 4)
+    if player.isZoning or player:GetMainJob() == 0 or entity.StatusServer == 4 then
+        return
+    end
+
     if currentZoneName == '' or currentRegionName == '' then
         ZoneState.refresh()
     end
@@ -777,21 +858,6 @@ ashita.events.register('d3d_present', 'infobar_present', function()
     draw_bottom_window()
     draw_weekday_vertical()
     draw_weekday_horizontal()
+    draw_exp_horizontal()
     draw_weather_test_window()
-
-    -- Save positions when windows have been initialized (user moved them)
-    if top_initialized then
-        if two_bars then
-            config.x_double_top = anchor_x
-            config.y_double_top = anchor_y
-        else
-            config.x_single = anchor_x
-            config.y_single = anchor_y
-        end
-    end
-
-    if bottom_initialized and two_bars then
-        config.x_double_bottom = anchor_bottom_x
-        config.y_double_bottom = anchor_bottom_y
-    end
 end)
