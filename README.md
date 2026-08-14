@@ -64,3 +64,5 @@ I then created and assembled InfoBar Overlay to display in game.
 
 Credit goes out to Thorny, Atom0s, Loonsies, Xenonsmurf, Onimitch, Matix, Hugin, XIUI Team
 and anyone else I may have missed.
+
+Some A.I. was used to create this Addon.
