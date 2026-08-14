@@ -57,6 +57,12 @@ Setting Window
 * This was created for Horizon `Ashita (Interface v4.30)`
 * You can load the addon by typing `/load addon InfoBar`.  It is recommended you add this line to the appropriate place in `scripts/default.txt` to auto load.
 
+### Horizon 
+- This was created for the Horizon private server, and they go through an approval process. Use at your own risk or wait til it's approved. I will update the process staus below.
+
+Status:
+- Addon was submitted and is ${\textsf{\color{red}{Pending..}}}$
+
 #### Credit
 
 Many creators involved that made the orignal code from the modules I put in the modules folder.
