@@ -4,6 +4,9 @@
 * (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Moon Phase).
 * (EXP/Limit Points|Merit Count|XP /hr|Merits /hr|XP Chain)
 
+### Horizon Server
+- InfoBar has been ${\textsf{\color{green}{Approved}}}$ for horizon on 09-04-2026.
+
 ### Overview
 All Commands below and more can be done from the settings window.
 
@@ -18,8 +21,9 @@ InfoBar Commands:
 
 
 ### To-Do
-
-
+- COR rolltracker bar
+- Assaults zone Timer bar (shows time in area)
+- exp/merits per hour bar (re-doing to be more like the points addon)
 
 ### Added
 
@@ -56,12 +60,6 @@ Setting Window
 * Addon directory is : `HorizonXI\Game\addons`
 * This was created for Horizon `Ashita (Interface v4.30)`
 * You can load the addon by typing `/load addon InfoBar`.  It is recommended you add this line to the appropriate place in `scripts/default.txt` to auto load.
-
-### Horizon 
-- This was created for the Horizon private server, and they go through an approval process. Use at your own risk or wait til it's approved. I will update the process staus below.
-
-Status:
-- Addon was submitted and is ${\textsf{\color{red}{Pending..}}}$
 
 #### Credit
 
