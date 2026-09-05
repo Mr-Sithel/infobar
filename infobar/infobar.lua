@@ -52,6 +52,7 @@ local default_settings = T{
     show_day        = true,
     show_weather    = true,
     show_time       = true,
+    show_localtime  = true,
     show_moon       = true,
 }
 
@@ -138,6 +139,10 @@ local function get_vana_day_and_time()
     local date = vanatime.get_current_date()
     local time = vanatime.get_current_time()
     return vana_days[date.weekday], string.format('%02d:%02d', time.h, time.m)
+end
+
+local function get_local_time()
+    return os.date('%I:%M %p')
 end
 
 local function get_zone_timer()
@@ -293,6 +298,7 @@ local function draw_settings_window()
         toggle("Show Compass",    "show_playerdir")
         toggle("Show Day",        "show_day")
         toggle("Show Vana Time",  "show_time")
+        toggle("Show Local Time", "show_localtime")
         toggle("Show Weather",    "show_weather")
         toggle("Show Moon Phase", "show_moon")
         imgui.EndGroup()
@@ -541,6 +547,18 @@ local function draw_top_window()
                 imgui.SameLine()
             end
 
+            -- LOCAL TIME
+            if config.show_localtime then
+                imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
+                imgui.SameLine()
+                if config.use_icons then
+                    imgui.TextColored({0.40, 0.80, 1.0, 1.0}, "\xef\x80\x97 " .. get_local_time())
+                else
+                    imgui.TextColored({0.40, 0.80, 1.0, 1.0}, get_local_time())
+                end
+                imgui.SameLine()
+            end
+
             -- WEATHER
             if config.show_weather then
                 imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
@@ -603,10 +621,11 @@ local function draw_bottom_window()
         -------------------------------------------------
         local parts = {}
 
-        if config.show_day     then table.insert(parts, { type = "day",     value = day }) end
-        if config.show_time    then table.insert(parts, { type = "text",    value = time }) end
-        if config.show_weather then table.insert(parts, { type = "weather", value = weather_name, color = weather_color }) end
-        if config.show_moon    then table.insert(parts, { type = "text",    value = get_moon_phase() }) end
+        if config.show_day       then table.insert(parts, { type = "day",       value = day }) end
+        if config.show_time      then table.insert(parts, { type = "text",      value = time }) end
+        if config.show_localtime then table.insert(parts, { type = "localtime", value = get_local_time() }) end
+        if config.show_weather   then table.insert(parts, { type = "weather",   value = weather_name, color = weather_color }) end
+        if config.show_moon      then table.insert(parts, { type = "text",      value = get_moon_phase() }) end
 
         -------------------------------------------------
         -- DRAW THE ROW
@@ -623,6 +642,12 @@ local function draw_bottom_window()
                 draw_colored_day(item.value)
             elseif item.type == "weather" then
                 imgui.TextColored(item.color, item.value)
+            elseif item.type == "localtime" then
+                if config.use_icons then
+                    imgui.TextColored({0.40, 0.80, 1.0, 1.0}, "\xef\x80\x97 " .. item.value)
+                else
+                    imgui.TextColored({0.40, 0.80, 1.0, 1.0}, item.value)
+                end
             elseif item.type == "text" then
                 if item.value == time then
                     -- Clock icon + yellow Vana time
