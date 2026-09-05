@@ -142,7 +142,7 @@ local function get_vana_day_and_time()
 end
 
 local function get_local_time()
-    return os.date('%I:%M %p')
+    return os.date('%I:%M:%S %p')
 end
 
 local function get_zone_timer()
