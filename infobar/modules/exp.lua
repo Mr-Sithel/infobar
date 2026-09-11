@@ -47,6 +47,7 @@ local exp_data = {
     
     last_kill_time = 0,
     xp_kills       = {},
+    last_estimate_second = -1,
 }
 
 ---------------------------------------------------------
@@ -153,6 +154,7 @@ exp_module.reset_all = function()
     exp_module.Chains.End()
     exp_data.last_kill_time = 0
     exp_data.xp_kills       = {}
+    exp_data.last_estimate_second = -1
 end
 
 ---------------------------------------------------------
@@ -176,50 +178,33 @@ ashita.events.register('packet_in', 'exp_packet_in', function(e)
             if msgId == 8 or msgId == 105 or msgId == 253 or msgId == 371 or msgId == 372 then
                 local now = os.clock()
 
-                -- Timeout idle check
-                local TIMEOUT_SECONDS = 600
-                if #exp_data.xp_kills > 0 then
-                    local last_kill = exp_data.xp_kills[#exp_data.xp_kills].timestamp
-                    if (now - last_kill) > TIMEOUT_SECONDS then
-                        exp_data.xp_kills    = {}
-                        exp_data.session_exp = 0
-                        exp_data.start_time  = os.time()
-                        exp_data.exp_per_hr  = 0
-                    end
+                -- Store XP gain and the time since the previous XP gain.
+                -- This uses the same rate inputs as Points.lua.
+                local killTime = now
+
+                if exp_data.last_kill_time ~= 0 then
+                    table.insert(exp_data.xp_kills, {
+                        time = killTime - exp_data.last_kill_time,
+                        xp   = val,
+                    })
+                else
+                    -- Points.lua treats the first kill as a 1-second interval.
+                    table.insert(exp_data.xp_kills, {
+                        time = 1,
+                        xp   = val,
+                    })
                 end
 
+                exp_data.last_kill_time = killTime
                 exp_data.session_exp = exp_data.session_exp + val
 
-                if #exp_data.xp_kills > 0 and exp_data.xp_kills[1].timestamp == nil then
-                    exp_data.xp_kills = {}
-                end
-
-                table.insert(exp_data.xp_kills, { timestamp = now, xp = val })
-
-                if #exp_data.xp_kills > 20 then
+                -- Keep the same 50-kill history used by Points.lua.
+                if #exp_data.xp_kills > 50 then
                     table.remove(exp_data.xp_kills, 1)
                 end
 
-                -- XP/hr Calculation
-                local MIN_KILLS = 2
-                if #exp_data.xp_kills >= MIN_KILLS then
-                    local oldest_kill = exp_data.xp_kills[1]
-                    local window_time = now - oldest_kill.timestamp
-                    
-                    local window_xp = 0
-                    for i = 2, #exp_data.xp_kills do
-                        window_xp = window_xp + exp_data.xp_kills[i].xp
-                    end
-
-                    if window_time > 0 then
-                        exp_data.exp_per_hr = math.floor((window_xp / window_time) * 3600)
-                    end
-                else
-                    local elapsed = os.time() - exp_data.start_time
-                    if elapsed > 0 then
-                        exp_data.exp_per_hr = math.floor((exp_data.session_exp / elapsed) * 3600)
-                    end
-                end
+                -- Update immediately after an XP packet.
+                exp_module.update_rate(true)
 
                 -- UPDATE CHAIN TIMER
                 local is_em_or_higher = (val >= 100) or (val2 > 0)
@@ -273,6 +258,54 @@ ashita.events.register('packet_in', 'exp_packet_in', function(e)
 end)
 
 ---------------------------------------------------------
+-- RATE ESTIMATE
+-- Mirrors Points.lua:
+--   * Average XP per kill.
+--   * Average time between kills.
+--   * Include the current time since the last kill.
+--   * Recalculate once per second while the addon is rendering.
+---------------------------------------------------------
+exp_module.update_rate = function(force)
+    if #exp_data.xp_kills == 0 or exp_data.last_kill_time == 0 then
+        exp_data.exp_per_hr = 0
+        return
+    end
+
+    -- Stop carrying an old rate indefinitely after 10 minutes of no XP.
+    if (os.clock() - exp_data.last_kill_time) > 600 then
+        exp_data.xp_kills = {}
+        exp_data.last_kill_time = 0
+        exp_data.session_exp = 0
+        exp_data.start_time = os.time()
+        exp_data.exp_per_hr = 0
+        exp_data.last_estimate_second = -1
+        return
+    end
+
+    local current_second = math.floor(os.clock())
+    if not force and current_second <= exp_data.last_estimate_second then
+        return
+    end
+
+    exp_data.last_estimate_second = current_second
+
+    local avgXP = 0
+    local avgTime = 0
+
+    for _, v in ipairs(exp_data.xp_kills) do
+        avgXP = avgXP + v.xp
+        avgTime = avgTime + v.time
+    end
+
+    avgXP = avgXP / #exp_data.xp_kills
+    avgTime = (avgTime + (os.clock() - exp_data.last_kill_time)) / (#exp_data.xp_kills + 1)
+
+    if avgTime > 0 then
+        exp_data.exp_per_hr = math.floor(((60 / avgTime) * avgXP) * 60)
+    end
+end
+
+---------------------------------------------------------
 -- HELPER: CALCULATE REMAINING CHAIN TIME
 ---------------------------------------------------------
 exp_module.get_chain_time_remaining = function()
@@ -295,6 +328,7 @@ end
 -- HELPER: CALCULATE Limit Points / EXP RATE
 ---------------------------------------------------------
 exp_module.get_rate = function()
+    exp_module.update_rate(false)
     if is_lp_mode() then
         return exp_data.exp_per_hr / 10000
     end
