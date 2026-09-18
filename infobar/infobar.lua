@@ -2,13 +2,13 @@
 -- Many creators involved that made the orignal code from the modules I put in the modules folder.
 -- I then created and assembled InfoBar Overlay to display in game.
 -- Credit goes out to Thorny, Atom0s, Loonsies, Xenonsmurf, Onimitch, Matix, Hugin, XIUI Team
--- and anyone else I may have missed.
+-- Daniel_H, Shinzaku, Artoo and anyone else I may have missed.
 -----------------------------------------------------------------------------------------------------
 
 addon.name    = 'InfoBar'
 addon.author  = 'Sithel'
-addon.version = '0.4'
-addon.desc    = 'Info Bar that shows (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Moon Phase).'
+addon.version = '0.6.0'
+addon.desc    = 'Info Bar that shows (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Moon Phase|Assault|RollTracker).'
 addon.link    = ''
 
 local settings    = require('settings')
@@ -20,29 +20,29 @@ local Weather     = require('modules/weather')
 local Direction   = require('modules/direction')
 local Map         = require('modules/map')
 local Exp         = require('modules/exp');
-local theme       = require('modules/infobar_theme')
+local Assaults    = require('modules/assault');
+local RollTracker = require('modules/rolltracker');
 
----------------------------------------------------------
--- SETTINGS
----------------------------------------------------------
+-- Settings
 local default_settings = T{
+    theme = 'gold',
     x_single = 878,
     y_single = 17,
-
     x_double_top    = 878,
     y_double_top    = 17,
     x_double_bottom = 878,
     y_double_bottom = 52,
-
-    use_icons = false,
+    use_icons  = false,
     two_bars   = false,
     bg_opacity = 0.6,
     window_rounding = 6.0,
-
     show_weekday_horizontal = false,
     show_weekday_vertical   = false,
     show_exp_horizontal     = false,
-
+    show_assault_bar        = false,
+    show_roll_bar           = false,
+    show_lucky_info         = true,
+    show_roll_timer         = true,
     show_jobs       = true,
     show_playerdir  = true,
     show_playerpos  = true,
@@ -58,9 +58,22 @@ local default_settings = T{
 
 local config = settings.load(default_settings)
 
----------------------------------------------------------
--- SETTINGS
----------------------------------------------------------
+-- Theme
+local function loadTheme(name)
+    return require('themes/theme_' .. name)
+end
+
+local current_loaded_theme_name = nil
+local theme = nil
+local function updateActiveTheme()
+    local target_theme = config.theme or 'gold'
+    if current_loaded_theme_name ~= target_theme then
+        theme = loadTheme(target_theme)
+        current_loaded_theme_name = target_theme
+    end
+end
+
+-- Settings
 local function update_settings(s)
     if s ~= nil then
         config = s
@@ -70,22 +83,19 @@ end
 
 settings.register('settings', 'settings_update', update_settings)
 
----------------------------------------------------------
--- STATE
----------------------------------------------------------
-local show_weather_test       = false
-local show_settings_window    = false
+-- State
+local show_weather_test     = false
+local show_settings_window  = false
+local show_theme_window     = false
+local currentZoneName       = ''
+local currentRegionName     = ''
+local zone_enter_time       = os.clock()
+local top_initialized       = false
+local bottom_initialized    = false
+local active_assault        = nil
+local assault_start_time    = 0
 
-local currentZoneName   = ''
-local currentRegionName = ''
-local zone_enter_time   = os.clock()
-
-local top_initialized    = false
-local bottom_initialized = false
-
----------------------------------------------------------
--- HELPERS
----------------------------------------------------------
+-- Helpers
 local vana_days = {
     [0] = 'Fireday', [1] = 'Earthday', [2] = 'Waterday', [3] = 'Windsday',
     [4] = 'Iceday', [5] = 'Lightningday', [6] = 'Lightsday', [7] = 'Darksday',
@@ -158,13 +168,41 @@ local function get_moon_phase()
     return string.format('%s %d%%', moon_name, date.moon_percent)
 end
 
----------------------------------------------------------
--- ZONE UPDATES
----------------------------------------------------------
+local function DrawCircledNumber(num, col)
+    col = col or { 1.0, 1.0, 1.0, 1.0 }
+    local u32_color = imgui.GetColorU32(col)
+    local text = tostring(num)
+    local padding = 4.0
+    local pos = { imgui.GetCursorScreenPos() }
+    local text_size = { imgui.CalcTextSize(text) }
+    local radius = math.max(text_size[1], text_size[2]) / 2 + padding
+    local center_x = pos[1] + radius
+    local center_y = pos[2] + (text_size[2] / 2)
+
+    local draw_list = imgui.GetWindowDrawList()
+
+    -- Semi-transparent black background fill
+    draw_list:AddCircleFilled({ center_x, center_y }, radius, 0xBB000000)
+
+    -- Circle outline with dynamic U32 color
+    draw_list:AddCircle({ center_x, center_y }, radius, u32_color, 12, 1.5)
+
+    -- Render number text inside using dynamic color table
+    imgui.SetCursorScreenPos({ center_x - (text_size[1] / 2), pos[2] })
+    imgui.TextColored(col, text)
+
+    imgui.SetCursorScreenPos({ pos[1] + (radius * 2) + 4, pos[2] })
+end
+
+-- Zone updates and chat parser
 ZoneState.onChange(function(id, name, region)
     currentZoneName   = name or ''
     currentRegionName = region or ''
     zone_enter_time   = os.clock()
+
+    -- Reset assault tracking on zone change
+    active_assault     = nil
+    assault_start_time = 0
 end)
 
 ashita.events.register('load', 'infobar_load', function()
@@ -172,9 +210,41 @@ ashita.events.register('load', 'infobar_load', function()
     ashita.tasks.once(1, ZoneState.refresh)
 end)
 
----------------------------------------------------------
--- COMMANDS
----------------------------------------------------------
+ashita.events.register('text_in', 'assault_text_in', function(e)
+    if e.injected then return end
+
+    local clean_msg = e.message:gsub('\x1e%p', ''):gsub('\x1f%p', '')
+
+    -- Salvage check ("Commencing transport to Bhaflau Remnants!")
+    local salvage_match = clean_msg:match("Commencing transport to%s+(.-)!")
+    if salvage_match then
+        for _, entry in ipairs(Assaults) do
+            if entry.trigger and entry.trigger:lower() == salvage_match:lower() then
+                active_assault = entry
+                assault_start_time = os.clock()
+                return
+            end
+        end
+    end
+
+    -- Standard Assault check ("Commencing Seagull Grounded!")
+    local assault_match = clean_msg:match("Commencing%s+(.-)!")
+    if assault_match then
+        for _, entry in ipairs(Assaults) do
+            if entry.name:lower() == assault_match:lower() then
+                active_assault = entry
+                assault_start_time = os.clock()
+                return
+            end
+        end
+    end
+end)
+
+ashita.events.register('packet_in', 'infobar_packet_in', function(e)
+    RollTracker.handle_packet(e);
+end)
+
+-- Commands
 local function split(str, sep)
     local t = {}
     for s in string.gmatch(str, "([^"..sep.."]+)") do
@@ -195,12 +265,15 @@ ashita.events.register('command', 'infobar_cmd', function(e)
 
     if sub == 'help' then
         print(chat.header(addon.name):append(chat.message('\31\207Commands:')));
-        print('\31\207 /ibar                    \31\8 - This help menu.');
-        print('\31\207 /ibar  c|config|settings \31\8 - shows a settings window.');
-        print('\31\207 /ibar  w|weekdays        \31\8 - shows days of the week order.');
-        print('\31\207 /ibar  e|exp             \31\8 - shows an exp bar.');
-        print('\31\207 /ibar  r|reset           \31\8 - reset positions.');
-        print('\31\207 /ibar  save              \31\8 - save settings.');
+        print('\31\207 /ibar                      \31\8 - This help menu.');
+        print('\31\207 /ibar  c|config|settings   \31\8 - shows a settings window.');
+        print('\31\207 /ibar  w|weekdays          \31\8 - shows days of the week order.');
+        print('\31\207 /ibar  e|exp               \31\8 - shows an exp bar.');
+        print('\31\207 /ibar  a|s|assault|salvage \31\8 - shows an assault/salvage bar.');
+        print('\31\207 /ibar  rt|rolltracker      \31\8 - shows a COR roll tracker bar.');
+        print('\31\207 /ibar  m|mode              \31\8 - Splits main bar into 2 smaller bars.');
+        print('\31\207 /ibar  reset               \31\8 - reset positions.');
+        print('\31\207 /ibar  save                \31\8 - save settings.');
     end
     if T{'settings', 'config', 'c'}:contains(sub) then
         show_settings_window = not show_settings_window
@@ -219,6 +292,18 @@ ashita.events.register('command', 'infobar_cmd', function(e)
         return
     end
 
+    if T{'assault', 'salvage', 'a', 's'}:contains(sub) then
+        config.show_assault_bar = not config.show_assault_bar
+        settings.save()
+        return
+    end
+
+    if T{'rt', 'rolltracker'}:contains(sub) then
+        config.show_roll_bar = not config.show_roll_bar
+        settings.save()
+        return
+    end
+
     if T{'mode', 'm'}:contains(sub) then
         config.two_bars = not config.two_bars
         top_initialized    = false
@@ -227,7 +312,7 @@ ashita.events.register('command', 'infobar_cmd', function(e)
         return
     end
 
-    if T{'reset', 'r'}:contains(sub) then
+    if T{'reset'}:contains(sub) then
         config.x_double_top    = default_settings.x_double_top
         config.y_double_top    = default_settings.y_double_top
         config.x_double_bottom = default_settings.x_double_bottom
@@ -253,6 +338,69 @@ ashita.events.register('command', 'infobar_cmd', function(e)
     end
 end)
 
+-- Draw themes
+local function draw_theme_window()
+    if not show_theme_window then return end
+
+    theme.push()
+
+    local flags = bit.bor(
+        ImGuiWindowFlags_NoResize,
+        ImGuiWindowFlags_AlwaysAutoResize
+    )
+
+    local is_open = { show_theme_window }
+    if imgui.Begin('InfoBar - Themes', is_open, flags) then
+        imgui.Text('Select Theme')
+        imgui.SameLine()
+        imgui.TextDisabled('(?)')
+        if imgui.IsItemHovered() then
+            imgui.SetTooltip('Choose a visual color theme for InfoBar.')
+        end
+
+        local themes = {
+            'gold',
+            'blue',
+            'red',
+            'green',
+            'purple',
+            'ice',
+            'gray'
+        }
+
+        local current = config.theme or 'gold'
+
+        imgui.PushItemWidth(140)
+        if imgui.BeginCombo('##infobar_theme_select', current) then
+            for _, t in ipairs(themes) do
+                local selected = (t == current)
+                if imgui.Selectable(t, selected) then
+                    config.theme = t
+                    settings.save()
+                    updateActiveTheme()
+                end
+
+                if selected then
+                    imgui.SetItemDefaultFocus()
+                end
+            end
+            imgui.EndCombo()
+        end
+        imgui.PopItemWidth()
+
+        imgui.Separator()
+
+        if imgui.Button('Close', { -1, 0 }) then
+            show_theme_window = false
+            is_open[1] = false
+        end
+    end
+
+    imgui.End()
+    theme.pop()
+    show_theme_window = is_open[1]
+end
+
 ---------------------------------------------------------
 -- IMGUI WINDOWS
 ---------------------------------------------------------
@@ -263,17 +411,11 @@ local function draw_settings_window()
 
     local flags = bit.bor(
         ImGuiWindowFlags_NoResize,
-        ImGuiWindowFlags_NoCollapse,
-        ImGuiWindowFlags_AlwaysAutoResize,
-        ImGuiWindowFlags_NoTitleBar
+        ImGuiWindowFlags_AlwaysAutoResize
     )
 
-    --if imgui.Begin("InfoBar - Settings", nil, flags) then     -- Ashita 4.30
-    if imgui.Begin('InfoBar - Settings', { true }, flags) then  -- Ashita 4.16 or 4.30
-        imgui.Text("InfoBar Settings")
-        imgui.Separator()
-        imgui.Text("Display Options")
-
+    local is_open = { show_settings_window }
+    if imgui.Begin('InfoBar - Settings', is_open, flags) then
         local function toggle(label, key)
             local ref = { config[key] }
             if imgui.Checkbox(label, ref) then
@@ -291,9 +433,9 @@ local function draw_settings_window()
         toggle("Show Region",     "show_region")
         imgui.EndGroup()
 
-        -- Column 2
         imgui.SameLine(200)
 
+        -- Column 2
         imgui.BeginGroup()
         toggle("Show Compass",    "show_playerdir")
         toggle("Show Day",        "show_day")
@@ -305,9 +447,7 @@ local function draw_settings_window()
 
         imgui.Separator()
 
-        -------------------------------------------------
-        -- TWO BAR MODE
-        -------------------------------------------------
+        -- Two Bar Mode
         local val = { config.two_bars }
         if imgui.Checkbox("Two Bars Mode", val) then
             config.two_bars = val[1]
@@ -316,18 +456,26 @@ local function draw_settings_window()
             settings.save()
         end
 
-        -------------------------------------------------
-        -- USE ICONS
-        -------------------------------------------------
+        imgui.SameLine()
+        imgui.TextDisabled('(?)')
+        if imgui.IsItemHovered() then
+            imgui.SetTooltip(' Splits main bar into 2 smaller bars.')
+        end
+
+        -- Use Icons
         local ref = { config.use_icons }
         if imgui.Checkbox("Enable Icons", ref) then
             config.use_icons = ref[1]
             settings.save()
         end
 
-        -------------------------------------------------
-        -- OPACITY SLIDER
-        -------------------------------------------------
+        imgui.SameLine()
+        imgui.TextDisabled('(?)')
+        if imgui.IsItemHovered() then
+            imgui.SetTooltip(' Shows icons for zone timer & vana clock.')
+        end
+
+        -- Opacity Slider
         imgui.Separator()
         imgui.Text("Background Options")
         local opacity_ref = { config.bg_opacity }
@@ -336,9 +484,7 @@ local function draw_settings_window()
             settings.save()
         end
 
-        -------------------------------------------------
         -- Background Rounding Slider (1–15)
-        -------------------------------------------------
         local rounding_ref = { config.window_rounding }
         if imgui.SliderFloat("Round Corners", rounding_ref, 1.0, 15.0, "%.0f") then
             config.window_rounding = rounding_ref[1]
@@ -346,9 +492,7 @@ local function draw_settings_window()
         end
         imgui.Separator()
 
-        -------------------------------------------------
-        -- WINDOW TOGGLES
-        -------------------------------------------------
+        -- Added other bar toggles
         local vert_ref = { config.show_weekday_vertical }
         if imgui.Checkbox("Weekdays Vertical Bar", vert_ref) then
             config.show_weekday_vertical = vert_ref[1]
@@ -366,12 +510,58 @@ local function draw_settings_window()
             config.show_exp_horizontal = exp_ref[1]
             settings.save()
         end
+
+        imgui.SameLine()
+        imgui.TextDisabled('(?)')
+        if imgui.IsItemHovered() then
+            imgui.SetTooltip(' Displays XP/Merit per hour w/ chain.')
+        end
+
+        local assault_ref = { config.show_assault_bar }
+        if imgui.Checkbox("Assault/Salvage Bar", assault_ref) then
+            config.show_assault_bar = assault_ref[1]
+            settings.save()
+        end
+
+        imgui.SameLine()
+        imgui.TextDisabled('(?)')
+        if imgui.IsItemHovered() then
+            imgui.SetTooltip(' Displays time remaining in area.')
+        end
+
+        local roll_ref = { config.show_roll_bar }
+        if imgui.Checkbox("RollTracker Bar", roll_ref) then
+            config.show_roll_bar = roll_ref[1]
+            settings.save()
+        end
+
+        imgui.SameLine()
+        imgui.TextDisabled('(?)')
+        if imgui.IsItemHovered() then
+            imgui.SetTooltip(' Only for Corsair as main job.')
+        end
+
+        if config.show_roll_bar then
+            imgui.Indent(16.0)
+
+            local lucky_ref = { config.show_lucky_info }
+            if imgui.Checkbox("Show Lucky/Unlucky Info", lucky_ref) then
+                config.show_lucky_info = lucky_ref[1]
+                settings.save()
+            end
+
+            local timer_ref = { config.show_roll_timer }
+            if imgui.Checkbox("Show Roll Timers", timer_ref) then
+                config.show_roll_timer = timer_ref[1]
+                settings.save()
+            end
+
+            imgui.Unindent(16.0)
+        end
         imgui.Separator()
 
-        -------------------------------------------------
-        -- RESET + SAVE BUTTONS
-        -------------------------------------------------
-        if imgui.Button("Reset Positions") then
+        -- Reset + Save & Close Buttons
+        if imgui.Button("Reset Positions", { 140, 0 }) then
             config.x_double_top    = default_settings.x_double_top
             config.y_double_top    = default_settings.y_double_top
             config.x_double_bottom = default_settings.x_double_bottom
@@ -385,18 +575,21 @@ local function draw_settings_window()
         end
 
         imgui.SameLine()
-        if imgui.Button("Save Settings") then
-            settings.save()
+        if imgui.Button("Themes", { 80, 0 }) then
+            show_theme_window = not show_theme_window
         end
 
         imgui.SameLine()
-        if imgui.Button("Close") then
+        if imgui.Button("Save & Close", { 130, 0 }) then
+            settings.save()
             show_settings_window = false
+            is_open[1] = false
         end
     end
 
     imgui.End()
     theme.pop()
+    show_settings_window = is_open[1]
 end
 
 local function draw_top_window()
@@ -418,8 +611,7 @@ local function draw_top_window()
         ImGuiWindowFlags_AlwaysAutoResize
     )
 
-    --if imgui.Begin('InfoBar - Top', nil, flags) then    -- Ashita 4.30
-    if imgui.Begin('InfoBar - Top', { true }, flags) then -- Ashita 4.16 or 4.30
+    if imgui.Begin('InfoBar - Top', { true }, flags) then
         local pos = { imgui.GetWindowPos() }
         local cur_x, cur_y = pos[1], pos[2]
 
@@ -443,9 +635,6 @@ local function draw_top_window()
         local playerpos = (gx and gy) and string.format("%s-%d", gx, gy) or "--/--"
         local facing = Direction.get()
 
-        ---------------------------------------------------------
-        -- TWO-BAR MODE 
-        ---------------------------------------------------------
         if config.two_bars then
             local day, time = get_vana_day_and_time()
             local weather_name  = Weather.get()
@@ -473,14 +662,12 @@ local function draw_top_window()
                 elseif item.type == "weather" then
                     imgui.TextColored(item.color, item.value)
                 elseif item.type == "text" then
-                    -- Zone timer (green)
                     if item.value == get_zone_timer() then
                         if config.use_icons then
                             imgui.TextColored({0.0, 1.0, 0.0, 1.0}, "\xef\x8b\xb2 " .. item.value)
                         else
                             imgui.TextColored({0.0, 1.0, 0.0, 1.0}, "Zone Timer " .. item.value)
                         end
-                    -- Player direction 
                     elseif item.value == facing then
                         imgui.TextColored(Direction.color_for(facing), item.value)
                     else
@@ -489,17 +676,12 @@ local function draw_top_window()
                 end
                 imgui.SameLine()
             end
-
-        ---------------------------------------------------------
-        -- SINGLE-BAR MODE 
-        ---------------------------------------------------------
         else
             local day, time = get_vana_day_and_time()
             local weather_name  = Weather.get()
             local weather_color = Weather.get_color()
             local facing = Direction.get()
 
-            -- LEFT SIDE (job | compass | pos | timer | zone | region)
             local left = {}
 
             if config.show_jobs       then table.insert(left, get_job_text()) end
@@ -522,20 +704,18 @@ local function draw_top_window()
                     else
                         imgui.Text(item)
                     end
-                    
+
                     imgui.SameLine()
                     imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                     imgui.SameLine()
                 end
             end
 
-            -- DAY
             if config.show_day then
                 draw_colored_day(day)
                 imgui.SameLine()
             end
 
-            -- TIME
             if config.show_time then
                 imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                 imgui.SameLine()
@@ -567,7 +747,6 @@ local function draw_top_window()
                 imgui.SameLine()
             end
 
-            -- MOON
             if config.show_moon then
                 imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                 imgui.SameLine()
@@ -600,8 +779,7 @@ local function draw_bottom_window()
         ImGuiWindowFlags_AlwaysAutoResize
     )
 
-    --if imgui.Begin('InfoBar - Bottom', nil, flags) then    -- Ashita 4.30
-    if imgui.Begin('InfoBar - Bottom', { true }, flags) then -- Ashita 4.16 or 4.30
+    if imgui.Begin('InfoBar - Bottom', { true }, flags) then
         local pos = { imgui.GetWindowPos() }
         local cur_x, cur_y = pos[1], pos[2]
 
@@ -616,9 +794,6 @@ local function draw_bottom_window()
         local weather_name  = Weather.get()
         local weather_color = Weather.get_color()
 
-        -------------------------------------------------
-        -- LIST OF ITEMS TO DISPLAY
-        -------------------------------------------------
         local parts = {}
 
         if config.show_day       then table.insert(parts, { type = "day",       value = day }) end
@@ -627,9 +802,6 @@ local function draw_bottom_window()
         if config.show_weather   then table.insert(parts, { type = "weather",   value = weather_name, color = weather_color }) end
         if config.show_moon      then table.insert(parts, { type = "text",      value = get_moon_phase() }) end
 
-        -------------------------------------------------
-        -- DRAW THE ROW
-        -------------------------------------------------
         local first = true
         for _, item in ipairs(parts) do
             if not first then
@@ -650,7 +822,6 @@ local function draw_bottom_window()
                 end
             elseif item.type == "text" then
                 if item.value == time then
-                    -- Clock icon + yellow Vana time
                     if config.use_icons then
                         imgui.TextColored({1.0, 0.80, 0.20, 1.0}, "\xef\x80\x97 " .. time)
                     else
@@ -684,8 +855,7 @@ local function draw_weekday_vertical()
         ImGuiWindowFlags_NoTitleBar
     )
 
-    --if imgui.Begin("InfoBar - Weekdays (Vertical)", nil, flags) then    -- Ashita 4.30
-    if imgui.Begin('InfoBar - Weekdays (Vertical)', { true }, flags) then -- Ashita 4.16 or 4.30
+    if imgui.Begin('InfoBar - Weekdays (Vertical)', { true }, flags) then
         draw_colored_day("Fireday")
         draw_colored_day("Earthday")
         draw_colored_day("Waterday")
@@ -716,8 +886,7 @@ local function draw_weekday_horizontal()
         ImGuiWindowFlags_NoTitleBar
     )
 
-    --if imgui.Begin("InfoBar - Weekdays (Horizontal)", nil, flags) then    -- Ashita 4.30
-    if imgui.Begin('InfoBar - Weekdays (Horizontal)', { true }, flags) then -- Ashita 4.16 or 4.30
+    if imgui.Begin('InfoBar - Weekdays (Horizontal)', { true }, flags) then
         draw_colored_day("Fireday");      imgui.SameLine()
         draw_colored_day("Earthday");     imgui.SameLine()
         draw_colored_day("Waterday");     imgui.SameLine()
@@ -736,6 +905,11 @@ end
 local function draw_exp_horizontal()
     if not config.show_exp_horizontal then return end
 
+    -- Keep the XP/hr estimate updating once per second, similar to points addon.
+    if Exp.update_rate then
+        Exp.update_rate(false)
+    end
+
     local data = Exp.exp_data
     local lp_mode = Exp.is_lp_mode and Exp.is_lp_mode() or false
 
@@ -751,8 +925,7 @@ local function draw_exp_horizontal()
         ImGuiWindowFlags_NoTitleBar
     )
 
-    --if imgui.Begin("InfoBar - EXP (Horizontal)", nil, flags) then    -- Ashita 4.30
-    if imgui.Begin('InfoBar - EXP (Horizontal)', { true }, flags) then -- Ashita 4.16 or 4.30
+    if imgui.Begin('InfoBar - EXP (Horizontal)', { true }, flags) then
         local curr = data.current_exp
         local max  = data.max_exp
         local tnl  = data.tnl
@@ -767,22 +940,22 @@ local function draw_exp_horizontal()
             tnl  = max - curr
             tnl_label = "TNM:"
 
-        local merit_str = string.format("%s/%s", Exp.format_comma(curr), Exp.format_comma(max))
-            imgui.TextColored({0.23, 0.61, 0.91, 1.0}, merit_str); imgui.SameLine() -- blue
+            local merit_str = string.format("%s/%s", Exp.format_comma(curr), Exp.format_comma(max))
+            imgui.TextColored({0.23, 0.61, 0.91, 1.0}, merit_str); imgui.SameLine()
         else
             imgui.Text("EXP:"); imgui.SameLine()
             local exp_str = string.format("%s/%s", Exp.format_comma(curr), Exp.format_comma(max))
-            imgui.TextColored({0.55, 0.90, 0.75, 1.0}, exp_str); imgui.SameLine() -- light green
+            imgui.TextColored({0.55, 0.90, 0.75, 1.0}, exp_str); imgui.SameLine()
         end
 
         imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|"); imgui.SameLine()
 
         imgui.Text(tnl_label); imgui.SameLine()
         if lp_mode then
-            imgui.TextColored({0.23, 0.61, 0.91, 1.0}, Exp.format_comma(tnl)); imgui.SameLine() -- blue
-            imgui.TextColored({0.2, 0.8, 0.2, 1.0}, string.format("(%d)", data.merit_count or 0)); imgui.SameLine() -- green
+            imgui.TextColored({0.23, 0.61, 0.91, 1.0}, Exp.format_comma(tnl)); imgui.SameLine()
+            imgui.TextColored({0.2, 0.8, 0.2, 1.0}, string.format("(%d)", data.merit_count or 0)); imgui.SameLine()
         else
-            imgui.TextColored({0.55, 0.90, 0.75, 1.0}, Exp.format_comma(tnl)); imgui.SameLine() -- light green
+            imgui.TextColored({0.55, 0.90, 0.75, 1.0}, Exp.format_comma(tnl)); imgui.SameLine()
         end
 
         imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|"); imgui.SameLine()
@@ -791,44 +964,211 @@ local function draw_exp_horizontal()
         if lp_mode then
             local mp_rate = (data.exp_per_hr or 0) / 10000
             local rate_str = string.format("%.1f", mp_rate)
-            imgui.TextColored({1.0, 0.80, 0.20, 1.0}, rate_str); imgui.SameLine() -- orange/yellow
+            imgui.TextColored({1.0, 0.80, 0.20, 1.0}, rate_str); imgui.SameLine()
             imgui.TextColored({1, 1, 1, 1}, " mp/hr"); imgui.SameLine()
         else
             local rate_str = Exp.format_comma(data.exp_per_hr or 0)
-            imgui.TextColored({1.0, 0.80, 0.20, 1.0}, rate_str); imgui.SameLine() -- orange/yellow
+            imgui.TextColored({1.0, 0.80, 0.20, 1.0}, rate_str); imgui.SameLine()
             imgui.TextColored({1, 1, 1, 1}, " xp/hr"); imgui.SameLine()
         end
 
         imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|"); imgui.SameLine()
 
-        --imgui.TextColored({1.0, 0.6, 0.0, 1.0}, " \xef\x83\x81\xef\x81\xa1"); imgui.SameLine()
         imgui.Text("Chain:"); imgui.SameLine()
-
         local chain_rem = Exp.get_chain_time_remaining and Exp.get_chain_time_remaining() or 0
         if chain_rem > 0 then
             local mins = math.floor(chain_rem / 60)
             local secs = chain_rem % 60
-            
-            -- Displays "#0 (4m 59s)"
+
             local chain_str = string.format("# %d (%dm %02ds)", chain, mins, secs)
             local timer_color = {1.0, 1.0, 0.67, 1.0}
 
             if chain_rem <= 10 then
-                timer_color = {1.0, 0.2, 0.2, 1.0}  -- Red
+                timer_color = {1.0, 0.2, 0.2, 1.0}
             elseif chain_rem <= 30 then
-                timer_color = {1.0, 0.6, 0.0, 1.0}  -- Orange
+                timer_color = {1.0, 0.6, 0.0, 1.0}
             end
-
             imgui.TextColored(timer_color, chain_str)
         else
             imgui.TextColored({1.0, 0.80, 0.20, 1.0}, "0")
-            --imgui.Text("0")
         end
     end
 
     imgui.End()
     imgui.PopStyleColor()
     imgui.PopStyleVar(2)
+end
+
+-- Assault / Salvage Bar (Shows time remaining inside)
+local function draw_assault_horizontal()
+    if not config.show_assault_bar then return end
+
+    imgui.SetNextWindowBgAlpha(config.bg_opacity)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
+    imgui.PushStyleColor(ImGuiCol_WindowBg, {0, 0, 0, config.bg_opacity})
+
+    local flags = bit.bor(
+        ImGuiWindowFlags_NoResize,
+        ImGuiWindowFlags_NoCollapse,
+        ImGuiWindowFlags_AlwaysAutoResize,
+        ImGuiWindowFlags_NoTitleBar
+    )
+
+    if imgui.Begin('InfoBar - Assault (Horizontal)', { true }, flags) then
+        if active_assault and active_assault.zone == currentZoneName then
+            local zone_display = currentZoneName ~= '' and currentZoneName or 'Unknown Zone'
+
+            imgui.Text("Zone:"); imgui.SameLine()
+            imgui.TextColored({0.55, 0.90, 0.75, 1.0}, zone_display); imgui.SameLine()
+
+            imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|"); imgui.SameLine()
+
+            imgui.Text("Assualt:"); imgui.SameLine()
+            imgui.TextColored({1.0, 0.80, 0.20, 1.0}, active_assault.name); imgui.SameLine()
+
+            if active_assault.portal then
+                imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|"); imgui.SameLine()
+                imgui.Text("Portal:"); imgui.SameLine()
+                imgui.TextColored({0.23, 0.61, 0.91, 1.0}, active_assault.portal); imgui.SameLine()
+            end
+
+            imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|"); imgui.SameLine()
+
+            local start_anchor = (assault_start_time > 0) and assault_start_time or zone_enter_time
+            local limit_seconds = (active_assault.time_limit or 30) * 60
+            local elapsed = math.floor(os.clock() - start_anchor)
+            local remaining = limit_seconds - elapsed
+
+            imgui.Text("Time Remaining:"); imgui.SameLine()
+
+            if remaining > 0 then
+                local mins = math.floor(remaining / 60)
+                local secs = remaining % 60
+                local time_str = string.format("%02d:%02d", mins, secs)
+
+                local timer_color = {0.0, 1.0, 0.0, 1.0}
+                if remaining <= 300 then
+                    timer_color = {1.0, 0.2, 0.2, 1.0}
+                elseif remaining <= 600 then
+                    timer_color = {1.0, 0.6, 0.0, 1.0}
+                end
+
+                imgui.TextColored(timer_color, time_str)
+            else
+                imgui.TextColored({1.0, 0.2, 0.2, 1.0}, "00:00")
+            end
+        else
+            imgui.TextColored({0.6, 0.6, 0.6, 1.0}, "Waiting to Enter Assault / Salvage...")
+        end
+    end
+
+    imgui.End()
+    imgui.PopStyleColor()
+    imgui.PopStyleVar(2)
+end
+
+-- RollTracker Bar
+local function draw_rolltracker_horizontal()
+    if not config.show_roll_bar then return end
+
+    local active_rolls = RollTracker.active_rolls
+    local now = os.clock()
+
+    -- Expire rolls past their 5-minute duration
+    for k, v in pairs(active_rolls) do
+        if v.expiration and (v.expiration - now) <= 0 then
+            active_rolls[k] = nil
+        end
+    end
+
+    -- Hide if no rolls active
+    if next(active_rolls) == nil then return end
+
+    imgui.SetNextWindowBgAlpha(config.bg_opacity)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0)
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, config.window_rounding)
+    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { 8, 12 })
+
+    imgui.PushStyleColor(ImGuiCol_WindowBg, {0, 0, 0, config.bg_opacity})
+
+    local flags = bit.bor(
+        ImGuiWindowFlags_NoResize,
+        ImGuiWindowFlags_NoCollapse,
+        ImGuiWindowFlags_AlwaysAutoResize,
+        ImGuiWindowFlags_NoTitleBar
+    )
+
+    if imgui.Begin('InfoBar - RollTracker', { true }, flags) then
+        for rollName, data in pairs(active_rolls) do
+            -- Roll name & circled total number with colors
+            local circle_color = { 1.0, 0.8, 0.2, 1.0 }     -- Default Orange
+            if data.is_bust then
+                circle_color = { 1.0, 0.0, 0.0, 1.0 }       -- Red
+            elseif data.total == 11 then
+                circle_color = { 0.1, 1.0, 0.1, 1.0 }       -- Bright Green
+            elseif data.total == data.lucky then
+                circle_color = { 0.55, 0.90, 0.75, 1.0 }    -- Light Green
+            elseif data.total == data.unlucky then
+                circle_color = { 1.0, 0.45, 0.45, 1.0 }     -- Light Red
+            end
+
+            imgui.Text(rollName)
+            imgui.SameLine()
+            DrawCircledNumber(data.total, circle_color)
+            imgui.SameLine()
+            imgui.Dummy({ 2, 0 })
+            imgui.SameLine()
+
+            -- Lucky / Unlucky Display: [L:X/U:Y] (Toggleable)
+            if config.show_lucky_info and data.lucky and data.unlucky then
+                local c_1 = { 1.0, 1.0, 1.0, 1.0 }     -- Default White
+                local c_2 = { 0.55, 0.90, 0.75, 1.0 }  -- Light Green
+                local c_3 = { 0.6, 0.6, 0.6, 0.8 }     -- Gray
+                local c_4 = { 1.0, 0.45, 0.45, 1.0 }   -- Light Red
+
+                imgui.TextColored(c_1, "[L:")
+                imgui.SameLine(0, 0)
+                imgui.TextColored(c_2, tostring(data.lucky))
+                imgui.SameLine(0, 0)
+                imgui.TextColored(c_3, "/")
+                imgui.SameLine(0, 0)
+                imgui.TextColored(c_1, "U:")
+                imgui.SameLine(0, 0)
+                imgui.TextColored(c_4, tostring(data.unlucky))
+                imgui.SameLine(0, 0)
+                imgui.TextColored(c_1, "]")
+                imgui.SameLine()
+            end
+
+            -- Status & Effect Text
+            local effect_str = data.effect_text or "Value unknown"
+
+            if data.is_bust then
+                imgui.TextColored({ 1.0, 0.0, 0.0, 1.0 }, "(Bust! " .. effect_str .. ")")
+            elseif data.total == 11 then
+                imgui.TextColored({ 0.1, 1.0, 0.1, 1.0 }, "(\xef\x94\xa3\xef\x94\xa6 " .. effect_str .. ")")
+            elseif data.total == data.lucky then
+                imgui.TextColored({ 0.55, 0.90, 0.75, 1.0 }, "(Lucky! " .. effect_str .. ")")
+            elseif data.total == data.unlucky then
+                imgui.TextColored({ 1.0, 0.45, 0.45, 1.0 }, "(Unlucky! " .. effect_str .. ")")
+            else
+                imgui.TextColored({ 1.0, 0.8, 0.2, 1.0 }, "(" .. effect_str .. ")")
+            end
+
+            -- Countdown Timer Next to Roll/Bust Status
+            if config.show_roll_timer and data.expiration then
+                local remaining = math.max(0, math.floor(data.expiration - now))
+                local timer_str = string.format("%d:%02d", math.floor(remaining / 60), remaining % 60)
+                imgui.SameLine()
+                imgui.TextDisabled("[" .. timer_str .. "]")
+            end
+        end
+    end
+
+    imgui.End()
+    imgui.PopStyleColor()
+    imgui.PopStyleVar(3)
 end
 
 local function draw_weather_test_window()
@@ -846,8 +1186,7 @@ local function draw_weather_test_window()
         ImGuiWindowFlags_NoTitleBar
     )
 
-    --if imgui.Begin("InfoBar - Weather Colors", nil, flags) then    -- Ashita 4.30
-    if imgui.Begin('InfoBar - Weather Colors', { true }, flags) then -- Ashita 4.16 or 4.30
+    if imgui.Begin('InfoBar - Weather Colors', { true }, flags) then
         for id, name in pairs(Weather.table) do
             local col = Weather.colors[name] or { 1, 1, 1, 1 }
             imgui.TextColored(col, name)
@@ -859,17 +1198,13 @@ local function draw_weather_test_window()
     imgui.PopStyleVar(2)
 end
 
----------------------------------------------------------
--- PRESENT
----------------------------------------------------------
+-- Preset
 ashita.events.register('d3d_present', 'infobar_present', function()
     local player = AshitaCore:GetMemoryManager():GetPlayer()
     local entity = GetPlayerEntity()
 
-    -- hide UI if player/entity objects aren't initialized yet
     if not player or not entity then return end
 
-    -- hide UI during zoning, uninitialized job state (0), or cutscenes/events (StatusServer == 4)
     if player.isZoning or player:GetMainJob() == 0 or entity.StatusServer == 4 then
         return
     end
@@ -878,11 +1213,15 @@ ashita.events.register('d3d_present', 'infobar_present', function()
         ZoneState.refresh()
     end
 
+    updateActiveTheme()
     draw_settings_window()
+    draw_theme_window()
     draw_top_window()
     draw_bottom_window()
     draw_weekday_vertical()
     draw_weekday_horizontal()
     draw_exp_horizontal()
+    draw_assault_horizontal()
+    draw_rolltracker_horizontal()
     draw_weather_test_window()
 end)
