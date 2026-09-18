@@ -8,7 +8,7 @@
 addon.name    = 'InfoBar'
 addon.author  = 'Sithel'
 addon.version = '0.6.2'
-addon.desc    = 'Info Bar that shows (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Moon Phase|Assault|RollTracker).'
+addon.desc    = 'Info Bar that shows (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Local Time|Moon Phase|Assault|RollTracker).'
 addon.link    = ''
 
 local settings    = require('settings')
@@ -744,7 +744,6 @@ local function draw_top_window()
                 imgui.SameLine()
             end
 
-            -- LOCAL TIME
             if config.show_localtime then
                 imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                 imgui.SameLine()
@@ -756,7 +755,6 @@ local function draw_top_window()
                 imgui.SameLine()
             end
 
-            -- WEATHER
             if config.show_weather then
                 imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                 imgui.SameLine()
