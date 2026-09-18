@@ -1,10 +1,10 @@
 ### InfoBar
 
 - Information Bar Overlay that shows: 
-* (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Moon Phase).
+* (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Local Time|Moon Phase).
 * (EXP/Limit Points|Merit Count|XP /hr|Merits /hr|XP Chain)
 * (Assault Zone|Assult Name|Time Remaining)
-* (Corsair Roll Tracker|Lucky/UnLucky|Time REmaining)
+* (Corsair Roll Tracker|Lucky/UnLucky|Time Remaining)
 
 ### Horizon Server
 - InfoBar has been ${\textsf{\color{green}{Approved}}}$ for horizon on 09-04-2026.
@@ -34,6 +34,9 @@ InfoBar Commands:
 - EXP/Merit/Per Hour Rate/XP Chain Bar (Now similar to the points addon)
 - Corsair Roll Tracker (Shows Lucky/Unlucky number with timers)
 - Assault (Shows Zone and time remaining in zone)
+- Local Time. Thanks [bgoodtimes](https://github.com/bgoodtimes)
+- All bars hide when chat windows are expanded or map is open
+- Winning Streak Merits added to Rolltracker
 
 ### Fixed
 
@@ -75,6 +78,6 @@ Setting Window
 Many creators involved that made the orignal code from the modules I put in the modules folder.
 I then created and assembled InfoBar Overlay to display in game.
 
-Credit goes out to Thorny, Atom0s, Loonsies, Xenonsmurf, Onimitch, Matix, Hugin, XIUI Team, Daniel_H, Shinzaku, Artoo and anyone else I may have missed.
+Credit goes out to Thorny, Atom0s, Loonsies, Xenonsmurf, Onimitch, Matix, Hugin, XIUI Team, Daniel_H, Shinzaku, Artoo, bgoodtimes and anyone else I may have missed.
 
 Some A.I. was used to create this Addon.
