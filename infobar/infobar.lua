@@ -7,7 +7,7 @@
 
 addon.name    = 'InfoBar'
 addon.author  = 'Sithel'
-addon.version = '0.6.0'
+addon.version = '0.6.2'
 addon.desc    = 'Info Bar that shows (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Moon Phase|Assault|RollTracker).'
 addon.link    = ''
 
@@ -19,9 +19,10 @@ local ZoneState   = require('modules/zonestate')
 local Weather     = require('modules/weather')
 local Direction   = require('modules/direction')
 local Map         = require('modules/map')
-local Exp         = require('modules/exp');
-local Assaults    = require('modules/assault');
-local RollTracker = require('modules/rolltracker');
+local Exp         = require('modules/exp')
+local Assaults    = require('modules/assault')
+local RollTracker = require('modules/rolltracker')
+local hide_menu   = require('modules/hide_menu')
 
 -- Settings
 local default_settings = T{
@@ -32,10 +33,11 @@ local default_settings = T{
     y_double_top    = 17,
     x_double_bottom = 878,
     y_double_bottom = 52,
-    use_icons  = false,
-    two_bars   = false,
-    bg_opacity = 0.6,
+    use_icons       = false,
+    two_bars        = false,
+    bg_opacity      = 0.6,
     window_rounding = 6.0,
+    winning_streak  = 0,
     show_weekday_horizontal = false,
     show_weekday_vertical   = false,
     show_exp_horizontal     = false,
@@ -52,6 +54,7 @@ local default_settings = T{
     show_day        = true,
     show_weather    = true,
     show_time       = true,
+    show_localtime  = true,
     show_moon       = true,
 }
 
@@ -148,6 +151,10 @@ local function get_vana_day_and_time()
     local date = vanatime.get_current_date()
     local time = vanatime.get_current_time()
     return vana_days[date.weekday], string.format('%02d:%02d', time.h, time.m)
+end
+
+local function get_local_time()
+    return os.date('%I:%M:%S %p')
 end
 
 local function get_zone_timer()
@@ -435,6 +442,7 @@ local function draw_settings_window()
         toggle("Show Compass",    "show_playerdir")
         toggle("Show Day",        "show_day")
         toggle("Show Vana Time",  "show_time")
+        toggle("Show Local Time", "show_localtime")
         toggle("Show Weather",    "show_weather")
         toggle("Show Moon Phase", "show_moon")
         imgui.EndGroup()
@@ -548,6 +556,21 @@ local function draw_settings_window()
             if imgui.Checkbox("Show Roll Timers", timer_ref) then
                 config.show_roll_timer = timer_ref[1]
                 settings.save()
+            end
+
+            local streak_ref = { config.winning_streak or 0 }
+
+            imgui.PushItemWidth(100) -- Sets the width of the slider bar
+            if imgui.SliderInt("Winning Streak Merits", streak_ref, 0, 5, "%d") then
+                config.winning_streak = streak_ref[1]
+                settings.save()
+            end
+            imgui.PopItemWidth()
+
+            imgui.SameLine()
+            imgui.TextDisabled('(?)')
+            if imgui.IsItemHovered() then
+                imgui.SetTooltip(' Adds +20 seconds per merit level to Phantom Roll duration. (Max 5 = 6:40)')
             end
 
             imgui.Unindent(16.0)
@@ -721,6 +744,17 @@ local function draw_top_window()
                 imgui.SameLine()
             end
 
+            if config.show_localtime then
+                imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
+                imgui.SameLine()
+                if config.use_icons then
+                    imgui.TextColored({0.40, 0.80, 1.0, 1.0}, "\xef\x80\x97 " .. get_local_time())
+                else
+                    imgui.TextColored({0.40, 0.80, 1.0, 1.0}, get_local_time())
+                end
+                imgui.SameLine()
+            end
+
             if config.show_weather then
                 imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                 imgui.SameLine()
@@ -777,10 +811,11 @@ local function draw_bottom_window()
 
         local parts = {}
 
-        if config.show_day     then table.insert(parts, { type = "day",     value = day }) end
-        if config.show_time    then table.insert(parts, { type = "text",    value = time }) end
-        if config.show_weather then table.insert(parts, { type = "weather", value = weather_name, color = weather_color }) end
-        if config.show_moon    then table.insert(parts, { type = "text",    value = get_moon_phase() }) end
+        if config.show_day          then table.insert(parts, { type = "day",        value = day }) end
+        if config.show_time         then table.insert(parts, { type = "text",       value = time }) end
+        if config.show_localtime    then table.insert(parts, { type = "localtime",  value = get_local_time() }) end
+        if config.show_weather      then table.insert(parts, { type = "weather",    value = weather_name, color = weather_color }) end
+        if config.show_moon         then table.insert(parts, { type = "text",       value = get_moon_phase() }) end
 
         local first = true
         for _, item in ipairs(parts) do
@@ -794,6 +829,12 @@ local function draw_bottom_window()
                 draw_colored_day(item.value)
             elseif item.type == "weather" then
                 imgui.TextColored(item.color, item.value)
+            elseif item.type == "localtime" then
+                if config.use_icons then
+                    imgui.TextColored({0.40, 0.80, 1.0, 1.0}, "\xef\x80\x97 " .. item.value)
+                else
+                    imgui.TextColored({0.40, 0.80, 1.0, 1.0}, item.value)
+                end
             elseif item.type == "text" then
                 if item.value == time then
                     if config.use_icons then
@@ -1049,10 +1090,22 @@ local function draw_rolltracker_horizontal()
     local active_rolls = RollTracker.active_rolls
     local now = os.clock()
 
-    -- Expire rolls past their 5-minute duration
+    local streak_merits = config.winning_streak or 0
+    local bonus_seconds = streak_merits * 20
+
+    -- Apply merit bonus to new rolls and clean up expired ones
     for k, v in pairs(active_rolls) do
-        if v.expiration and (v.expiration - now) <= 0 then
-            active_rolls[k] = nil
+        if v.expiration then
+            -- Apply merit bonus once when roll is first detected (unless it's a Bust)
+            if not v.merit_applied and not v.is_bust then
+                v.expiration = v.expiration + bonus_seconds
+                v.merit_applied = true
+            end
+
+            -- Expire rolls past their total duration
+            if (v.expiration - now) <= 0 then
+                active_rolls[k] = nil
+            end
         end
     end
 
@@ -1178,7 +1231,6 @@ ashita.events.register('d3d_present', 'infobar_present', function()
     local entity = GetPlayerEntity()
 
     if not player or not entity then return end
-
     if player.isZoning or player:GetMainJob() == 0 or entity.StatusServer == 4 then
         return
     end
@@ -1188,8 +1240,16 @@ ashita.events.register('d3d_present', 'infobar_present', function()
     end
 
     updateActiveTheme()
+
     draw_settings_window()
     draw_theme_window()
+    draw_weather_test_window()
+
+    -- Global hide bars when map or chat is open
+    if hide_menu.is_map_or_chat_open() then
+        return
+    end
+
     draw_top_window()
     draw_bottom_window()
     draw_weekday_vertical()
@@ -1197,5 +1257,4 @@ ashita.events.register('d3d_present', 'infobar_present', function()
     draw_exp_horizontal()
     draw_assault_horizontal()
     draw_rolltracker_horizontal()
-    draw_weather_test_window()
 end)
