@@ -744,6 +744,7 @@ local function draw_top_window()
                 imgui.SameLine()
             end
 
+            -- LOCAL TIME
             if config.show_localtime then
                 imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                 imgui.SameLine()
@@ -755,6 +756,7 @@ local function draw_top_window()
                 imgui.SameLine()
             end
 
+            -- WEATHER
             if config.show_weather then
                 imgui.TextColored({0.6, 0.6, 0.6, 0.4}, "|")
                 imgui.SameLine()
