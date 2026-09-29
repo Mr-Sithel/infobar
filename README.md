@@ -8,10 +8,10 @@
 
 ### Private Server Approval
 
-| Server | Status |
-| :--- | :--- |
-| **HorizonXI** | ${\textsf{\color{green}{Approved}}}$ |
-| **PhoenixXI** | ${\textsf{\color{orange}{Pending}}}$ |
+| Server | Status | Date |
+| :--- | :--- | :--- |
+| **HorizonXI** | ${\textsf{\color{green}{Approved}}}$ | 09-04-2026 |
+| **PhoenixXI** | ${\textsf{\color{orange}{Pending}}}$ | -- |
 
 ### Overview
 All Commands below and more can be done from the settings window.
