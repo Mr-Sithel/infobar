@@ -388,14 +388,25 @@ function roll_module.handle_packet(e)
                         total = total,
                         is_bust = true,
                         effect_text = bust_str,
-                        expiration = os.clock() + 300, -- 5-minute Bust duration
+                        expiration = os.clock() + 300,
                         lucky = data.lucky,
                         unlucky = data.unlucky,
+                        enhancement = 0,
                     };
                 else
-                    -- Normal roll state
-                    local enhancement = get_roll_enhancement();
-                    local tier_values = data.values[enhancement] or data.values[0];
+                    -- Check current gear
+                    local current_enhancement = get_roll_enhancement();
+                    
+                    -- If this is a Double-Up on an existing roll, carry forward whichever 
+                    -- enhancement tier is HIGHER (in case gear was put on after initial roll)
+                    local existing_roll = roll_module.active_rolls[roll_name];
+                    local final_enhancement = current_enhancement;
+                    
+                    if existing_roll and existing_roll.enhancement then
+                        final_enhancement = math.max(existing_roll.enhancement, current_enhancement);
+                    end
+
+                    local tier_values = data.values[final_enhancement] or data.values[0];
                     local val = tier_values[total] or 0;
                     local prefix = (val > 0) and "+" or ""
 
@@ -407,6 +418,7 @@ function roll_module.handle_packet(e)
                         expiration = os.clock() + 300,
                         lucky = data.lucky,
                         unlucky = data.unlucky,
+                        enhancement = final_enhancement, -- Store for subsequent Double-Ups
                     };
                 end
             end
