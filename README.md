@@ -6,8 +6,12 @@
 * (Assault Zone|Assult Name|Time Remaining)
 * (Corsair Roll Tracker|Lucky/UnLucky|Time Remaining)
 
-### Horizon Server
-- InfoBar has been ${\textsf{\color{green}{Approved}}}$ for horizon on 09-04-2026.
+### Private Server Approval
+
+| Server | Status |
+| :--- | :--- |
+| **HorizonXI** | ${\textsf{\color{green}{Approved}}}$ |
+| **PhoenixXI** | ${\textsf{\color{orange}{Pending}}}$ |
 
 ### Overview
 All Commands below and more can be done from the settings window.
