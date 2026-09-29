@@ -7,7 +7,7 @@
 
 addon.name    = 'InfoBar'
 addon.author  = 'Sithel'
-addon.version = '0.6.2'
+addon.version = '0.6.3'
 addon.desc    = 'Info Bar that shows (Job|Compass|pos|Zone Timer|Zone|Region|Day|Weather|Vana Time|Local Time|Moon Phase|Assault|RollTracker).'
 addon.link    = ''
 
@@ -27,8 +27,8 @@ local hide_menu   = require('modules/hide_menu')
 -- Settings
 local default_settings = T{
     theme = 'gold',
-    x_single = 878,
-    y_single = 17,
+    x_single = 315,
+    y_single = 14,
     x_double_top    = 878,
     y_double_top    = 17,
     x_double_bottom = 878,
