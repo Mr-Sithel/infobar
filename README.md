@@ -11,7 +11,7 @@
 | Server | Status | Date |
 | :--- | :--- | :--- |
 | **HorizonXI** | ${\textsf{\color{green}{Approved}}}$ | 09-04-2026 |
-| **PhoenixXI** | ${\textsf{\color{orange}{Pending}}}$ | -- |
+| **PhoenixXI** | ${\textsf{\color{green}{Approved}}}$ | 09-30-2026 |
 
 ### Overview
 All Commands below and more can be done from the settings window.
